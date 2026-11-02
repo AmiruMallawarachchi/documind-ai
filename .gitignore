@@ -1,0 +1,53 @@
+# ── Secrets — NEVER commit these ──────────────────────────────────────────────
+# Every .env shape is ignored, and the two example files are un-ignored explicitly: a pattern that
+# accidentally excludes .env.example means the next clone has no idea what to fill in.
+.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
+
+# ── Python ─────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+dist/
+build/
+.venv/
+.venv-*/
+venv/
+*.egg
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ── Node / Next.js ─────────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── OS artefacts ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE ────────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+
+# ── This repo ──────────────────────────────────────────────────────────────────
+# The nested repository create-next-app left inside frontend/, kept as an archive after the monorepo's
+# single root repo was created. It is history, not a submodule: git would have refused to track
+# frontend/'s files while a .git directory lived inside it.
+.git-archives/
+
+# Local scratch: fixtures, exported logs, and any PDF dropped in to answer one question.
+scratch/
+*.log
