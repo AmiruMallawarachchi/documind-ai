@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Importing settings here validates every required env var before anything else runs, so a missing
 # key aborts at boot with a clear message instead of failing mid-request deep inside a library stack.
 from app.core.config import settings
-from app.routers import health
+from app.routers import auth, health
 
 
 @asynccontextmanager
@@ -64,10 +64,14 @@ app.add_middleware(
     # Listed explicitly rather than "*": the method set is known, and naming it means a typo in the
     # frontend shows up as a clear CORS error instead of quietly working with an unintended verb.
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    # Authorization is the header real clients now send; keeping the list explicit still means a typo in
+    # the frontend surfaces as a clear CORS error rather than a preflight that quietly passed.
+    allow_headers=["Authorization", "Content-Type", "X-Demo-Key"],
+    expose_headers=["Retry-After"],
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 # All routes live under /api so they are clearly namespaced apart from any static assets later.
 app.include_router(health.router, prefix="/api")
-
+# Session first: it is the endpoint every other call depends on, and it is the only unauthenticated route.
+app.include_router(auth.router, prefix="/api")
