@@ -22,6 +22,10 @@ sentence-transformers==3.3.1
 pinecone-client==5.0.1
 pymongo==4.10.1
 
+# Agent orchestration and the Groq chat client.
+langchain-core==0.3.86
+langchain-groq==0.2.1
+
 # Session tokens (core/security.py). Pinned explicitly because the app imports it directly — relying on it
 # arriving as somebody else's transitive dependency is how a deploy one day fails to find `jwt`.
 PyJWT==2.15.1

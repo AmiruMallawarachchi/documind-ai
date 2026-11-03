@@ -18,6 +18,12 @@ from pydantic import Field
 
 
 class Settings(BaseSettings):
+    # ── LLM ───────────────────────────────────────────────────────────────────
+    # FREE-TIER NOTE: Groq free tier has per-model rate limits (~30 req/min for
+    # larger models). Retry/backoff logic lives in Phase 5; flag is here so you
+    # know which key drives that constraint.
+    groq_api_key: str = Field(..., description="Groq API key — get from console.groq.com")
+
     # ── Vector DB ─────────────────────────────────────────────────────────────
     # FREE-TIER NOTE: Pinecone Starter = 2 GB storage, 2M write units/month.
     # Re-embedding the same document repeatedly burns write units fast; the
