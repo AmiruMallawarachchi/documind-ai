@@ -23,6 +23,7 @@ pinecone-client==5.0.1
 pymongo==4.10.1
 
 # Agent orchestration and the Groq chat client.
+langgraph==0.2.53
 langchain-core==0.3.86
 langchain-groq==0.2.1
 

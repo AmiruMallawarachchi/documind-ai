@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Importing settings here validates every required env var before anything else runs, so a missing
 # key aborts at boot with a clear message instead of failing mid-request deep inside a library stack.
 from app.core.config import settings
-from app.routers import auth, documents, health
+from app.routers import auth, chat, documents, health
 
 
 @asynccontextmanager
@@ -85,3 +85,4 @@ app.include_router(health.router, prefix="/api")
 # Session first: it is the endpoint every other call depends on, and it is the only unauthenticated route.
 app.include_router(auth.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")
