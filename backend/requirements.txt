@@ -9,3 +9,15 @@ uvicorn[standard]==0.32.1
 pydantic==2.14.2
 pydantic-settings==2.6.1
 python-multipart==0.0.18
+
+# Document text extraction. pypdf is pure Python; python-docx needs no system libraries either, which
+# keeps the Dockerfile's apt layer empty.
+pypdf==5.1.0
+python-docx==1.1.2
+
+# Local embeddings: all-MiniLM-L6-v2, 384 dimensions, no per-call cost.
+sentence-transformers==3.3.1
+
+# Vector store and metadata store.
+pinecone-client==5.0.1
+pymongo==4.10.1
