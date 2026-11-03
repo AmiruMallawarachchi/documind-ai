@@ -21,3 +21,7 @@ sentence-transformers==3.3.1
 # Vector store and metadata store.
 pinecone-client==5.0.1
 pymongo==4.10.1
+
+# Session tokens (core/security.py). Pinned explicitly because the app imports it directly — relying on it
+# arriving as somebody else's transitive dependency is how a deploy one day fails to find `jwt`.
+PyJWT==2.15.1
