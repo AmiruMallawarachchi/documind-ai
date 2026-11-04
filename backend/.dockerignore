@@ -1,0 +1,30 @@
+# Build context for the backend image (Render: dockerContext = ./backend).
+#
+# The Dockerfile copies exactly one thing — app/ — so this file is not what keeps the image small.
+# It keeps the *upload* small: Docker tars the whole context before the first RUN, and without these
+# lines that would be the 3 GB .venv, the test suite, and the real .env sitting in a build cache on
+# somebody else's machine.
+
+# ── Secrets: never inside the image, never in a layer anyone can pull ──────────
+.env
+.env.*
+*.pem
+*.key
+
+# ── Local environments and tool caches ────────────────────────────────────────
+.venv/
+.venv-*/
+venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ── Not needed to serve requests ──────────────────────────────────────────────
+tests/
+scripts/
+Dockerfile
+.dockerignore
+*.md
