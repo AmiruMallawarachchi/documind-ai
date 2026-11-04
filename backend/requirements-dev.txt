@@ -1,0 +1,8 @@
+# Test-only dependencies. Kept out of requirements.txt: pytest and its plugins must not ride into the
+# Render image, where every kilobyte counts against the free tier's 512 MB RAM and slow build.
+-r requirements.txt
+
+pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.1
+ruff==0.8.6
