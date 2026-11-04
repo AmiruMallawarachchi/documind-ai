@@ -1,0 +1,241 @@
+"use client";
+
+/**
+ * app/page.tsx — The DocuMind workspace: documents on the left, the conversation on the right.
+ *
+ * This is a client component by choice. The app's data is per-browser, arrives over SSE, and is useless
+ * without a session, so server-rendering it would mean fetching nothing and then replacing the whole tree
+ * on mount. The shell is static markup (which Next still prerenders into the initial HTML) and the panels
+ * fill themselves in with effects.
+ *
+ * State that two panels need lives here and is passed down; state only one panel needs lives inside it.
+ * `useDocuments` and `useChat` are where the actual behaviour lives, which keeps this file about layout.
+ *
+ * `Home` does one extra thing: it holds the session and decides whether the visitor sees the access-code
+ * gate or the board. `Workspace` is the board, and it only ever mounts with a token already in hand, so
+ * none of its effects have to cope with an unauthenticated first render.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import AccessGate from "@/components/AccessGate";
+import ChatPanel from "@/components/ChatPanel";
+import DocumentsPanel from "@/components/DocumentsPanel";
+import { API_URL, type ConversationSummary, listConversations } from "@/lib/api";
+import { useDocuments } from "@/lib/use-documents";
+import { useSession } from "@/lib/use-session";
+
+export default function Home() {
+  const { session, ready, submit, signOut } = useSession();
+
+  // Neither the gate nor the workspace yet: the stored token has not been read, and guessing wrong in
+  // either direction shows a returning visitor a sign-in box they have to dismiss.
+  if (!ready) return <div className="min-h-dvh bg-zinc-950" />;
+  if (!session) return <AccessGate submit={submit} />;
+
+  // Keyed by owner so that signing in as a different namespace tears down the previous one's transcripts,
+  // document list, and polling timers instead of re-rendering them with the other person's ids still in.
+  return <Workspace key={session.ownerId} ownerId={session.ownerId} onSignOut={signOut} />;
+}
+
+function Workspace({ ownerId, onSignOut }: { ownerId: string; onSignOut: () => void }) {
+  const documents = useDocuments();
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  // Bumping the key remounts the chat panel, which is React's answer to "the transcript should reset
+  // when the user picks a different thread" — cleaner than clearing it from an effect. It is separate
+  // from conversationId because the server issues a new thread's id mid-stream, and adopting that id
+  // must not reset the answer the user is watching arrive.
+  const [threadKey, setThreadKey] = useState(0);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [showSidebar, setShowSidebar] = useState(false);
+
+  const refreshConversations = useCallback(() => {
+    listConversations()
+      .then(setConversations)
+      .catch(() => {
+        // A missing history list is not worth an error banner: the documents panel already reports
+        // connectivity problems, and the conversation itself still works.
+      });
+  }, []);
+
+  useEffect(() => {
+    refreshConversations();
+  }, [refreshConversations]);
+
+  const readyIds = useMemo(
+    () =>
+      new Set(
+        documents.documents
+          .filter((document) => document.status === "indexed")
+          .map((document) => document.document_id),
+      ),
+    [documents.documents],
+  );
+
+  // Derived, not stored: a document that failed or was deleted must not stay in the scope of the next
+  // question, or the backend refuses the turn with "these documents are not indexed" for a file the user
+  // can no longer see.
+  const scope = useMemo(
+    () => selectedIds.filter((documentId) => readyIds.has(documentId)),
+    [selectedIds, readyIds],
+  );
+
+  const indexedCount = readyIds.size;
+
+  const startThread = useCallback((id: string | null) => {
+    setConversationId(id);
+    setThreadKey((key) => key + 1);
+  }, []);
+
+  const onConversationCreated = useCallback(
+    (created: string) => {
+      // No key bump: this is the id of the thread already on screen.
+      setConversationId(created);
+      // The title comes from the first question, which the backend has just written — so the list is
+      // re-read rather than patched with a guess.
+      refreshConversations();
+    },
+    [refreshConversations],
+  );
+
+  return (
+    <main className="flex h-dvh flex-col bg-zinc-950 text-zinc-100">
+      <header className="flex items-center gap-3 border-b border-zinc-800 px-4 py-3 sm:px-6">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-sm font-bold">
+          D
+        </div>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-sm font-semibold leading-tight">DocuMind AI</h1>
+          <p className="truncate text-[0.7rem] text-zinc-500">
+            Multi-agent document Q&amp;A · answers verified against your sources
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onSignOut}
+          className="hidden rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200 lg:block"
+        >
+          Sign out
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowSidebar((value) => !value)}
+          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 lg:hidden"
+          aria-expanded={showSidebar}
+        >
+          {showSidebar ? "Chat" : "Documents"}
+        </button>
+      </header>
+
+      <div className="grid min-h-0 flex-1 lg:grid-cols-[20rem_1fr]">
+        <aside
+          className={`${
+            showSidebar ? "flex" : "hidden"
+          } min-h-0 flex-col gap-4 border-b border-zinc-800 p-4 lg:flex lg:border-b-0 lg:border-r`}
+        >
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+            <Section title="Documents">
+              <DocumentsPanel
+                state={documents}
+                selectedIds={scope}
+                onToggleScope={(documentId) =>
+                  setSelectedIds((current) =>
+                    current.includes(documentId)
+                      ? current.filter((value) => value !== documentId)
+                      : [...current, documentId],
+                  )
+                }
+                onScopeChange={setSelectedIds}
+              />
+            </Section>
+
+            <Section title="History">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    startThread(null);
+                    setShowSidebar(false);
+                  }}
+                  className="rounded-lg bg-indigo-600/90 px-2.5 py-1 text-[0.7rem] font-semibold text-white transition-colors hover:bg-indigo-500"
+                >
+                  New chat
+                </button>
+                <span className="text-[0.7rem] text-zinc-600">
+                  {conversations.length} saved
+                </span>
+              </div>
+              <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+                {conversations.map((conversation) => (
+                  <li key={conversation.conversation_id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        startThread(conversation.conversation_id);
+                        setShowSidebar(false);
+                      }}
+                      className={`w-full truncate rounded-lg px-2 py-1.5 text-left text-xs transition-colors ${
+                        conversation.conversation_id === conversationId
+                          ? "bg-zinc-800 text-zinc-100"
+                          : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                      }`}
+                      title={conversation.title}
+                    >
+                      {conversation.title}
+                    </button>
+                  </li>
+                ))}
+                {conversations.length === 0 && (
+                  <li className="px-2 py-1.5 text-xs text-zinc-600">
+                    No conversations yet.
+                  </li>
+                )}
+              </ul>
+            </Section>
+          </div>
+
+          <div className="flex shrink-0 items-center justify-between gap-2 text-[0.65rem] text-zinc-700">
+            <p title={ownerId}>
+              API: {API_URL.replace(/^https?:\/\//, "")} · owner {ownerId.slice(0, 8)}
+            </p>
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="text-zinc-600 transition-colors hover:text-zinc-300 lg:hidden"
+            >
+              Sign out
+            </button>
+          </div>
+        </aside>
+
+        <div className={`${showSidebar ? "hidden" : "flex"} min-h-0 lg:flex`}>
+          <ChatPanel
+            key={threadKey}
+            conversationId={conversationId}
+            documentIds={scope}
+            indexedCount={indexedCount}
+            onConversationCreated={onConversationCreated}
+          />
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="min-h-0">
+      <h2 className="mb-2 text-[0.7rem] font-semibold uppercase tracking-widest text-zinc-500">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
