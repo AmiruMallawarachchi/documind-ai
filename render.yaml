@@ -45,6 +45,11 @@ services:
       # ── Not secret, but deployment-specific ───────────────────────────────────
       - key: PINECONE_INDEX_NAME
         value: documind-chunks
+      - key: GROQ_MODEL
+        # Groq retires models; this is the line to change when it does, so the fix is a dashboard edit and
+        # a restart rather than a rebuild. Keep it non-reasoning — see .env.example for the token-budget
+        # reason the router agent cannot share a budget with a thinking model.
+        value: qwen/qwen3.8-27b
       - key: CORS_ORIGINS
         # Must be the exact Vercel origin after the first frontend deploy; never "*" in production.
         sync: false

@@ -87,6 +87,7 @@ what was given up.
 | `render.yaml` with every secret `sync: false` | The deployment shape becomes reviewable source; a Blueprint with a literal key in it is the same mistake as committing `.env`, applied automatically to every copy | Values still set by hand, once |
 | Accept Render cold starts; do not cron-ping | Being explicit about a real constraint beats hiding it, and a keep-alive cron burns the 750 free instance-hours | ~60 s first request after idle, with UI copy that says so |
 | Pins copied from the working venv, not guessed | "Works locally, dead on Render" is usually a drifted transitive dependency | Manual re-pinning on upgrades |
+| Model name in `GROQ_MODEL`, default `qwen/qwen3.8-27b` | Groq retired the `llama-3.1-8b-instant` this was built against, so a hard-coded pin became a provider error on every call; and reasoning models (`openai/gpt-oss-*`) are not substitutes — they bill hidden thinking tokens against `max_tokens`, and the router asks for 48, so it answers `''` and loses document scoping | A default that will itself age out, and a test to keep the pin in config |
 | `PyJWT` listed explicitly | A direct import that arrives only as somebody else's transitive dependency is how a deploy one day cannot find `jwt` | One more pin |
 | pytest and ruff in `requirements-dev.txt` only | Test tooling must not ride into an image with a 512 MB RAM budget | Two requirement files |
 

@@ -57,7 +57,7 @@ namespace. Locally, the code is `offline-demo`.
 |---|---|---|
 | Backend | Python 3.11, FastAPI, Uvicorn | — |
 | Agent orchestration | LangGraph (`StateGraph`, conditional edges) | — |
-| LLM | Groq, `llama-3.1-8b-instant` via `langchain-groq` | free |
+| LLM | Groq, `qwen/qwen3.8-27b` via `langchain-groq` (override with `GROQ_MODEL`) | free |
 | Embeddings | `sentence-transformers` / `all-MiniLM-L6-v2`, 384 dims — runs in-process, no API | free |
 | Vector DB | Pinecone Serverless (cosine, `aws/us-east-1`) | Starter |
 | Document DB | MongoDB Atlas (documents, conversations, messages) | M0, 512 MB |
