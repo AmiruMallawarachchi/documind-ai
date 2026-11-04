@@ -187,3 +187,20 @@ def test_a_failure_mid_stream_is_not_retried_because_it_would_duplicate_the_answ
     assert collected == ["The fee is "]
     assert chat.streams == 1
     assert no_sleep == []
+
+
+# ── Which model the default is ────────────────────────────────────────────────
+# Groq retired the llama-3.x family this project was built against, which surfaced as a provider error on
+# every single call rather than anything resembling a helpful message. The name therefore lives in config,
+# so a deployment can move to a served model without a code change — and these two tests are what keep it
+# there instead of drifting back into a literal.
+
+
+def test_the_default_model_name_is_read_from_settings(monkeypatch):
+    monkeypatch.setattr(llm.settings, "groq_model", "vendor/model-9b")
+    assert llm.get_chat_model().model_name == "vendor/model-9b"
+
+
+def test_an_explicit_model_still_overrides_the_default(monkeypatch):
+    monkeypatch.setattr(llm.settings, "groq_model", "vendor/model-9b")
+    assert llm.get_chat_model(model="vendor/other-70b").model_name == "vendor/other-70b"

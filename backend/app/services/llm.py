@@ -91,9 +91,10 @@ def get_chat_model(
     """
     return ChatGroq(
         api_key=settings.groq_api_key,
-        # A small, fast Llama-class model by default: the free tier's per-day token budget stretches
-        # much further, and four agents per question need that headroom.
-        model_name=model or "llama-3.1-8b-instant",
+        # A small, fast, non-reasoning model by default: the free tier's per-day token budget stretches
+        # much further, and four agents per question need that headroom. See Settings.groq_model for why
+        # a reasoning model cannot take this slot at the router's token budget.
+        model_name=model or settings.groq_model,
         temperature=temperature,
         max_tokens=max_tokens,
         streaming=True,
