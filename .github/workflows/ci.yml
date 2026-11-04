@@ -1,0 +1,77 @@
+# .github/workflows/ci.yml
+#
+# The suite is credential-free on purpose (tests/conftest.py sets every required env var to a placeholder),
+# so CI runs the same 200 tests a contributor runs locally — no secrets to configure, and no paid API call
+# that could fail for reasons unrelated to the diff.
+#
+# What CI does NOT do: build the Docker image. That needs the CPU-wheel pin to resolve against PyTorch's
+# index and several minutes of downloads, and Render builds the same Dockerfile on every deploy anyway —
+# duplicating it here would buy a slower pipeline, not more confidence.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch supersedes the first; free-tier minutes are not spent on stale commits.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          # torch comes from PyTorch's CPU index, the same pin the Dockerfile uses. Without this, pip
+          # resolves the default wheel and pulls ~2 GB of CUDA runtime into a runner that has no GPU.
+          pip install --upgrade pip
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu "torch==2.15.0+cpu"
+          pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check app tests scripts
+
+      - name: Tests
+        # No network, no keys: every external boundary is faked in conftest.
+        run: pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        # NEXT_PUBLIC_API_URL is inlined at build time, so CI builds against the local default. A real
+        # deploy sets its own value in Vercel's dashboard; nothing here needs to know it.
+        run: npm run build
