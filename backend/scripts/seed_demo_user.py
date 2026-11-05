@@ -1,7 +1,8 @@
 """
 scripts/seed_demo_user.py — Create (or reset) the pre-verified demo account.
 
-    cd backend && python scripts/seed_demo_user.py
+    cd backend
+    DEMO_ACCOUNT_PASSWORD='the password the README will publish' python scripts/seed_demo_user.py
 
 Why this exists: the deployed demo has no access code any more, so a reviewer needs an account. Asking one
 to give an email address and wait for a mail they cannot read — from a demo whose inbox nobody checks — is
@@ -18,7 +19,7 @@ Idempotent by design, because it gets run once per redeploy: an existing address
 its documents survive) and gets a new hash and a confirmed flag.
 
 Reads whatever `MONGODB_URI` points at, like the app itself — so seeding production means running it with
-the production URI, and `--dry-run` says which cluster you are about to write to first.
+the production URI, and `DRY_RUN=1` says which cluster you are about to write to first.
 """
 
 from __future__ import annotations
