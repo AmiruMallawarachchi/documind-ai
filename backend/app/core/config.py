@@ -23,6 +23,17 @@ class Settings(BaseSettings):
     # larger models). Retry/backoff logic lives in Phase 5; flag is here so you
     # know which key drives that constraint.
     groq_api_key: str = Field(..., description="Groq API key — get from console.groq.com")
+    # The llama-3.x family this originally pinned is retired from Groq's catalogue, and reasoning
+    # models (openai/gpt-oss-*) are not drop-in replacements here: they bill hidden thinking tokens
+    # against max_tokens, so the router's 48-token budget returns an empty string and every question
+    # loses its document scoping. This default answers directly, so small budgets still produce text.
+    groq_model: str = Field(
+        default="qwen/qwen3.8-27b",
+        description=(
+            "Chat model served by Groq today. Override with GROQ_MODEL if the default is retired or you "
+            "want a different one."
+        ),
+    )
 
     # ── Vector DB ─────────────────────────────────────────────────────────────
     # FREE-TIER NOTE: Pinecone Starter = 2 GB storage, 2M write units/month.
