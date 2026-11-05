@@ -404,16 +404,21 @@ def test_index_creation_does_not_stop_the_app():
 
 def test_the_hot_paths_ask_for_the_owner_scoped_indexes(db):
     """The compound indexes mirror the filters above, in the same order: owner first, then the sort or
-    the thread key. Without them, every list and every thread load is a collection scan."""
+    the thread key. Without them, every list and every thread load is a collection scan.
+
+    The two account indexes are asserted here too because this pass is the only cold-start index site for
+    the database; test_user_store checks what the account service does with them."""
     metadata_store._ensure_indexes(db)
 
     specs = [str(entry[1][0]) for entry in db.log if entry[0].endswith("create_index")]
 
-    assert len(specs) == 5
+    assert len(specs) == 7
     assert any("owner_id" in s and "uploaded_at" in s for s in specs)
     assert any("owner_id" in s and "updated_at" in s for s in specs)
     assert any("conversation_id" in s and "created_at" in s for s in specs)
     assert any(s == "document_id" for s in specs)
+    assert any(s == "email" for s in specs)
+    assert any(s == "user_id" for s in specs)
 
 
 def test_a_failed_ping_reports_down_instead_of_raising(monkeypatch):

@@ -30,3 +30,8 @@ langchain-groq==0.2.1
 # Session tokens (core/security.py). Pinned explicitly because the app imports it directly — relying on it
 # arriving as somebody else's transitive dependency is how a deploy one day fails to find `jwt`.
 PyJWT==2.15.1
+
+# Password hashing (core/password.py). Imported directly, so pinned for the same reason as PyJWT.
+# argon2-cffi brings its own binary wheel: the Dockerfile still needs no apt layer, which is the
+# constraint that shaped the rest of this file.
+argon2-cffi==25.1.0
