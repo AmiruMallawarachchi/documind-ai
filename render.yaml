@@ -1,0 +1,62 @@
+# render.yaml — Infrastructure as code for the DocuMind backend.
+#
+# Why this file exists: Render reads it on repo connect, so the service definition (Docker runtime,
+# build context, health-check path) lives in reviewable source rather than in screenshots of a dashboard
+# that nobody can re-create six months from now.
+#
+# Every secret is declared with `sync: false`, which means "this key must exist, the value comes from
+# you". Nothing here carries a credential — a Blueprint with a literal API key in it is the same mistake
+# as committing .env, except it is applied automatically to every new copy of the repo.
+#
+# The frontend is a separate, deliberate choice: Vercel (not Render) hosts Next.js, and Vercel has no
+# equivalent of a Blueprint for hobby projects — its settings are set once in the dashboard and listed in
+# README.md instead.
+
+services:
+  - type: web
+    name: documind-backend
+    plan: free
+    runtime: docker
+
+    # The context is backend/, not the repo root: the image needs app/ plus requirements.txt, and a
+    # root-wide context would upload frontend/node_modules on every single build.
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+
+    # Liveness only, on purpose: /api/health answers from the process itself and never touches a
+    # database, because a failed health check makes Render restart the container — and a restart loop
+    # on the free tier is an outage you cause yourself. Dependency status lives at /api/health/deep,
+    # which is for a human checking whether the credentials it just pasted actually work.
+    healthCheckPath: /api/health
+
+    envVars:
+      # ── Required secrets (set in the dashboard; never committed) ──────────────
+      - key: GROQ_API_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: DEMO_ACCESS_CODE
+        sync: false
+
+      # ── Not secret, but deployment-specific ───────────────────────────────────
+      - key: PINECONE_INDEX_NAME
+        value: documind-chunks
+      - key: CORS_ORIGINS
+        # Must be the exact Vercel origin after the first frontend deploy; never "*" in production.
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+
+      # ── Tuning (defaults are in app/core/config.py; listed so they are discoverable) ──
+      - key: JWT_TTL_MINUTES
+        value: "1440"
+      - key: CHAT_REQUESTS_PER_MINUTE
+        value: "10"
+      - key: UPLOAD_REQUESTS_PER_MINUTE
+        value: "6"
+      - key: LOGIN_REQUESTS_PER_MINUTE
+        value: "5"
