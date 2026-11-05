@@ -11,14 +11,14 @@
  * State that two panels need lives here and is passed down; state only one panel needs lives inside it.
  * `useDocuments` and `useChat` are where the actual behaviour lives, which keeps this file about layout.
  *
- * `Home` does one extra thing: it holds the session and decides whether the visitor sees the access-code
- * gate or the board. `Workspace` is the board, and it only ever mounts with a token already in hand, so
- * none of its effects have to cope with an unauthenticated first render.
+ * `Home` does one extra thing: it holds the session and decides whether the visitor sees the sign-in panel
+ * or the board. `Workspace` is the board, and it only ever mounts with a token already in hand, so none of
+ * its effects have to cope with an unauthenticated first render.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import AccessGate from "@/components/AccessGate";
+import AuthPanel from "@/components/AuthPanel";
 import ChatPanel from "@/components/ChatPanel";
 import DocumentsPanel from "@/components/DocumentsPanel";
 import { API_URL, type ConversationSummary, listConversations } from "@/lib/api";
@@ -26,12 +26,12 @@ import { useDocuments } from "@/lib/use-documents";
 import { useSession } from "@/lib/use-session";
 
 export default function Home() {
-  const { session, ready, submit, signOut } = useSession();
+  const { session, ready, signOut } = useSession();
 
-  // Neither the gate nor the workspace yet: the stored token has not been read, and guessing wrong in
+  // Neither the panel nor the workspace yet: the stored token has not been read, and guessing wrong in
   // either direction shows a returning visitor a sign-in box they have to dismiss.
   if (!ready) return <div className="min-h-dvh bg-zinc-950" />;
-  if (!session) return <AccessGate submit={submit} />;
+  if (!session) return <AuthPanel />;
 
   // Keyed by owner so that signing in as a different namespace tears down the previous one's transcripts,
   // document list, and polling timers instead of re-rendering them with the other person's ids still in.
