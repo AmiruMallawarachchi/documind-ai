@@ -213,6 +213,22 @@ instance doubles the allowance — see §8.
 **Uploads** are validated by extension and size before parsing, and the limit is enforced before a byte
 is read.
 
+**Mail.** `core/mail.py` has three transports behind one `send()`, and the reason there are three is a
+hosting constraint, not a preference:
+
+| Transport | Where it runs | What it does |
+|---|---|---|
+| `console` | default, CI, any clone | writes the whole message, link included, to the log |
+| `smtp` | a laptop | `smtplib.SMTP_SSL` to `smtp.gmail.com:465` with a Gmail App Password |
+| `brevo` | the deployed demo | one `urllib` POST to `api.brevo.com/v3/smtp/email` on 443 |
+
+Render's free instances drop outbound traffic to SMTP ports 25, 465 and 587, so `smtp` boots, passes its
+credential check, and then fails at connect time with a bare `OSError` after the 10 s timeout — while the
+visitor is still holding a `202` that promised a link. That is the whole argument for the third row. Both
+live transports are refused at boot without their credentials, both bound the socket with the same
+timeout, and both log a failure by exception **class** only: a 401 body from a mail provider can echo the
+key it refused, and this is the one module that holds it.
+
 ---
 
 ## 6. Observability
