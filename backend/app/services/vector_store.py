@@ -152,7 +152,11 @@ def query_similar(
         vector=query_vector,
         top_k=top_k,
         include_metadata=True,
-        filters=filters,
+        # `filter`, singular. The client takes **kwargs, so `filters=` is accepted by Python and then
+        # dropped: the query runs unscoped, which here means owner isolation silently disappears. The
+        # name is pinned by a test that calls the real client signature, because a fake of this module
+        # cannot catch it.
+        filter=filters,
     )
 
     results: list[RetrievedChunk] = []
@@ -188,11 +192,13 @@ def delete_document_vectors(*, document_id: str, owner_id: str) -> int:
     """
     index = get_index()
     filters = {"owner_id": owner_id, "document_id": document_id}
-    existing = index.query(vector=[0.0] * settings.embedding_dimension, top_k=1, filters=filters, include_metadata=False)
+    existing = index.query(
+        vector=[0.0] * settings.embedding_dimension, top_k=1, filter=filters, include_metadata=False
+    )
     if not existing.matches:
         # Nothing indexed yet, so there is nothing to overwrite — saves a pointless delete bill.
         return 0
-    index.delete(filters=filters, delete_all=False)
+    index.delete(filter=filters, delete_all=False)
     return 1
 
 
