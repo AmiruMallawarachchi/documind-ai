@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Importing settings here validates every required env var before anything else runs, so a missing
 # key aborts at boot with a clear message instead of failing mid-request deep inside a library stack.
 from app.core.config import settings
-from app.routers import auth, health
+from app.routers import auth, documents, health
 
 
 @asynccontextmanager
@@ -34,6 +34,15 @@ async def lifespan(app: FastAPI):
         "documind-ai %s starting", settings.app_version
     )
 
+
+    try:
+        from app.services.embedding_service import get_model
+
+        get_model()
+    except Exception as exc:
+        # Deliberately not fatal: /api/health must still answer so Render keeps the instance up and
+        # the deploy log states the real reason uploads are failing.
+        logger.error("embedding model failed to load: %s", exc)
 
     yield
 
@@ -75,3 +84,4 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api")
 # Session first: it is the endpoint every other call depends on, and it is the only unauthenticated route.
 app.include_router(auth.router, prefix="/api")
+app.include_router(documents.router, prefix="/api")
