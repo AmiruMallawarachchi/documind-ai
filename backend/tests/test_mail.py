@@ -1,19 +1,24 @@
 """
-tests/test_mail.py — The two transports, and what a failed send costs.
+tests/test_mail.py — The three transports, and what a failed send costs.
 
 `console` is the default and the one the suite, a fresh clone, and CI use: it must put the whole link in
-the log, because that is the only way a reviewer without SMTP credentials can reach a verified account.
+the log, because that is the only way a reviewer without mail credentials can reach a verified account.
 `smtp` is exercised against a fake of `smtplib.SMTP_SSL` — asserting the handshake this app depends on
-(implicit TLS on 465, login before send, a bounded timeout) without a network.
+(implicit TLS on 465, login before send, a bounded timeout) without a network. `brevo` is exercised
+against a fake of `urllib.request.urlopen`, because the point of it is that it leaves on port 443:
+Render's free instances drop outbound SMTP, so a deployed demo cannot deliver mail any other way.
 
-The security-relevant case is the third one: what gets written to the log when Gmail refuses the
-password. A server reply to a failed AUTH command can echo the credential, so the rule is the same one
-already applied to /api/health/deep — log the exception class, never its message.
+The security-relevant case is the failure one, and it is the same for both live transports: what gets
+written to the log when the provider refuses. A reply to a failed AUTH command, or a 401 body that echoes
+the key, can carry the credential — so the rule stays the one already applied to /api/health/deep, log
+the exception class, never its message.
 """
 
 from __future__ import annotations
 
+import json
 import smtplib
+import urllib.error
 
 import pytest
 from pydantic import ValidationError
@@ -59,6 +64,56 @@ def _reset_smtp(monkeypatch):
     return RecordingSMTP
 
 
+class FakeResponse:
+    """The context manager `urlopen` hands back, with the body Brevo actually returns."""
+
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+class RecordingUrlopen:
+    """Stands in for `urllib.request.urlopen` and remembers the Request it was handed.
+
+    Installed for every test in this module, so a transport that reaches the network by accident fails
+    here rather than sending a real email from CI.
+    """
+
+    requests: list["RecordingUrlopen"] = []
+    raises: Exception | None = None
+    body: bytes = b'{"messageId": "<20261105153000.brevo@api.sendinblue.com>"}'
+
+    def __init__(self, request, timeout=None):
+        self.request = request
+        self.timeout = timeout
+        type(self).requests.append(self)
+        if type(self).raises is not None:
+            raise type(self).raises
+
+    def __enter__(self):
+        return FakeResponse(type(self).body)
+
+    def __exit__(self, *args):
+        return False
+
+
+@pytest.fixture(autouse=True)
+def _reset_urlopen(monkeypatch):
+    RecordingUrlopen.requests = []
+    RecordingUrlopen.raises = None
+    RecordingUrlopen.body = b'{"messageId": "<20261105153000.brevo@api.sendinblue.com>"}'
+    monkeypatch.setattr(mail.urllib.request, "urlopen", RecordingUrlopen)
+    return RecordingUrlopen
+
+
 @pytest.fixture
 def smtp_transport(monkeypatch):
     monkeypatch.setattr(settings, "mail_transport", "smtp")
@@ -66,6 +121,13 @@ def smtp_transport(monkeypatch):
     monkeypatch.setattr(settings, "smtp_password", "aaaaaaaabbbbcccc")
     monkeypatch.setattr(settings, "smtp_host", "smtp.gmail.com")
     monkeypatch.setattr(settings, "smtp_port", 465)
+
+
+@pytest.fixture
+def brevo_transport(monkeypatch):
+    monkeypatch.setattr(settings, "mail_transport", "brevo")
+    monkeypatch.setattr(settings, "brevo_api_key", "xbr-aaaaaaaabbbbcccc")
+    monkeypatch.setattr(settings, "brevo_sender", "documind@example.com")
 
 
 # ── console ────────────────────────────────────────────────────────────────────
@@ -88,6 +150,7 @@ def test_the_console_transport_opens_no_socket(monkeypatch):
         raise AssertionError("the console transport must not reach for the network")
 
     monkeypatch.setattr(mail.smtplib, "SMTP_SSL", explode)
+    monkeypatch.setattr(mail.urllib.request, "urlopen", explode)
     assert settings.mail_transport == "console"
 
     mail.send(to="you@example.com", subject="s", body="b")
@@ -128,6 +191,92 @@ def test_the_body_explains_the_link_works_once(smtp_transport):
     body = RecordingSMTP.instances[0].message.get_content()
     assert "Confirm this address" in body
     assert "ignore this message" in body
+
+
+# ── brevo ──────────────────────────────────────────────────────────────────────
+
+
+def payload_of(call: RecordingUrlopen) -> dict:
+    """The JSON body the transport actually posted, decoded once for the assertions below."""
+    return json.loads(call.request.data.decode("utf-8"))
+
+
+def test_a_brevo_send_posts_the_link_to_the_api_over_https(brevo_transport):
+    """The whole reason this transport exists: Render's free instances drop outbound traffic to ports 25,
+    465 and 587, so a message that has to leave the host has to leave on 443."""
+    mail.send_verification_link("you@example.com", "https://app.example.com/verify?token=abc")
+
+    (call,) = RecordingUrlopen.requests
+    assert call.request.full_url == mail.BREVO_URL
+    assert call.request.full_url.startswith("https://")
+    assert call.request.get_method() == "POST"
+    assert payload_of(call)["to"] == [{"email": "you@example.com"}]
+    assert "https://app.example.com/verify?token=abc" in payload_of(call)["plainContent"]
+
+
+def test_the_brevo_request_authenticates_with_the_key_header(brevo_transport):
+    """A key in a header is not a key in the URL: the URL survives a proxy log and a stack trace, and the
+    body survives a request dump, so neither of them is where a credential belongs."""
+    mail.send(to="you@example.com", subject="s", body="b")
+
+    (call,) = RecordingUrlopen.requests
+    assert call.request.get_header("Api-key") == "xbr-aaaaaaaabbbbcccc"
+    assert call.request.get_header("Content-type") == "application/json"
+    assert "xbr-aaaaaaaabbbbcccc" not in call.request.full_url
+    assert "xbr-aaaaaaaabbbbcccc" not in call.request.data.decode("utf-8")
+
+
+def test_the_brevo_sender_is_a_setting_of_its_own(brevo_transport):
+    """Brevo refuses a sender it has not verified, and that refusal reads like a mail outage rather than
+    "this address is yours to use" — so the sender is its own setting, not borrowed from the SMTP account."""
+    mail.send_verification_link("you@example.com", "https://app.example.com/verify?token=abc")
+
+    assert payload_of(RecordingUrlopen.requests[0])["sender"] == {
+        "name": "DocuMind",
+        "email": "documind@example.com",
+    }
+
+
+def test_a_brevo_hang_is_cut_off_at_a_bounded_timeout(brevo_transport):
+    mail.send(to="you@example.com", subject="s", body="b")
+
+    assert RecordingUrlopen.requests[0].timeout == mail.HTTP_TIMEOUT_SECONDS
+
+
+def test_the_brevo_message_id_is_logged_so_a_send_can_be_traced(brevo_transport, caplog):
+    """The one handle on a message after it leaves: "the visitor never got it" becomes a lookup at the
+    provider instead of a guess, and the id is neither a credential nor a recipient address."""
+    with caplog.at_level("INFO", logger="documind.mail"):
+        mail.send_verification_link("you@example.com", "https://app.example.com/verify?token=abc")
+
+    assert "20261105153000.brevo@api.sendinblue.com" in caplog.text
+
+
+def test_a_rejected_key_is_logged_as_a_class_never_as_a_message(brevo_transport, caplog):
+    """Same rule as the SMTP branch and the same reason: a provider that echoes the credential in its 401
+    body would otherwise put it into the Render log stream, readable by anyone with dashboard access."""
+
+    class EchoingKeyError(urllib.error.URLError):
+        def __str__(self):
+            return "401 Unauthorized: invalid api-key xbr-aaaaaaaabbbbcccc"
+
+    RecordingUrlopen.raises = EchoingKeyError("401 Unauthorized")
+
+    with caplog.at_level("ERROR", logger="documind.mail"):
+        with pytest.raises(mail.MailError):
+            mail.send_verification_link("you@example.com", "https://app.example.com/verify?token=abc")
+
+    assert "EchoingKeyError" in caplog.text
+    assert "xbr-aaaaaaaabbbbcccc" not in caplog.text
+
+
+def test_a_brevo_refusal_is_mail_error_not_a_500(brevo_transport):
+    """A visitor who cannot get a link deserves "try again in a moment", not a stack trace and not the 202
+    that would promise a mail that is never coming."""
+    RecordingUrlopen.raises = urllib.error.HTTPError(mail.BREVO_URL, 401, "Unauthorized", {}, None)
+
+    with pytest.raises(mail.MailError):
+        mail.send(to="you@example.com", subject="s", body="b")
 
 
 # ── failure ────────────────────────────────────────────────────────────────────
@@ -203,6 +352,38 @@ def test_a_half_configured_smtp_transport_is_refused(overrides):
     login attempt against it would fail at send time rather than at boot."""
     with pytest.raises(ValidationError):
         build(**overrides)
+
+
+def test_brevo_without_credentials_is_refused_at_boot():
+    """The same boot-time rule as SMTP, for the same reason: an empty secret in the dashboard is
+    indistinguishable from a working configuration until a visitor is waiting for a link."""
+    with pytest.raises(ValidationError) as raised:
+        build(mail_transport="brevo", brevo_api_key="", brevo_sender="")
+
+    assert "BREVO_API_KEY" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"mail_transport": "brevo", "brevo_api_key": "k", "brevo_sender": ""},
+        {"mail_transport": "brevo", "brevo_api_key": "", "brevo_sender": "a@b.com"},
+        {"mail_transport": "brevo", "brevo_api_key": "  ", "brevo_sender": "  "},
+    ],
+    ids=["no-sender", "no-key", "whitespace-only"],
+)
+def test_a_half_configured_brevo_transport_is_refused(overrides):
+    with pytest.raises(ValidationError):
+        build(**overrides)
+
+
+def test_the_brevo_transport_needs_no_smtp_credentials():
+    """The two live transports are alternatives, not layers: a deployment that posts to an API must not be
+    made to carry a Gmail App Password it will never use — and would then have to rotate."""
+    built = build(mail_transport="brevo", brevo_api_key="k", brevo_sender="a@b.com")
+
+    assert (built.smtp_user, built.smtp_password) == ("", "")
+    assert built.mail_transport == "brevo"
 
 
 def test_an_unknown_transport_is_refused_rather_than_falling_back():

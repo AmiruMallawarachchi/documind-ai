@@ -250,6 +250,10 @@ Stated plainly, because a list of limits is the most honest part of a portfolio 
 - **Free-tier ceilings are real and shared.** Groq caps requests per minute and tokens per day; Atlas M0
   is a hard 512 MB; Pinecone Starter is 2 GB and 2M write units a month. One re-embedding of a large
   corpus is worth thinking about before clicking.
+- **A free Render instance cannot speak SMTP.** Outbound traffic to ports 25, 465 and 587 is blocked
+  there, so `MAIL_TRANSPORT=smtp` boots, authenticates nothing and fails on connect — the deployed demo
+  sends its verification mail through an HTTPS mail API instead (`MAIL_TRANSPORT=brevo`, free to
+  300 messages a day). `smtp` stays available for a laptop, where it works.
 - **Verification latency.** The critic reads the whole draft before anything streams, so first-token
   latency is several seconds on a multi-agent turn. That is the cost of the feature, not a bug.
 - **History window is 8 turns.** Deliberate: an entire multi-year thread in every prompt is slow and a
