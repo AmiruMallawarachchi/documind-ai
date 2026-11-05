@@ -56,11 +56,12 @@ services:
       - key: PINECONE_INDEX_NAME
         value: documind-chunks
       - key: MAIL_TRANSPORT
-        # `smtp` once SMTP_USER and SMTP_PASSWORD are set. The value here is the safe one: a Blueprint
-        # sync cannot turn a working mail send into a silent `console` fallback, and it cannot turn a
-        # missing credential into a booting service that never delivers anything (config.py refuses
-        # `smtp` without both).
-        value: console
+        # The dashboard owns this value, because it is the one setting that changes when mail credentials
+        # arrive: `console` for a fresh clone (config.py's default, links written to the log) and `smtp`
+        # for a deployed service that can actually deliver. Declaring a literal here would let a Blueprint
+        # sync quietly rewrite a working `smtp` back to `console`, and that failure is invisible — every
+        # visitor keeps getting a 202 and a link that only ever reaches the log.
+        sync: false
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT
