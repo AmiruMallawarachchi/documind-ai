@@ -10,6 +10,7 @@ Collections (see system.md data model):
   documents      one record per uploaded file, with an ingestion status
   conversations  a chat thread header
   messages       one turn, with citations and the agent trace that produced it
+  users          one account — email, Argon2id hash, verification flag (owned by user_store)
 
 Sync pymongo is used for the same reason as Pinecone: FastAPI runs sync endpoints in a worker
 threadpool, so blocking calls do not stall the event loop.
@@ -36,6 +37,9 @@ _db = None
 _DOCUMENTS = "documents"
 _CONVERSATIONS = "conversations"
 _MESSAGES = "messages"
+# Declared here because this module owns the cold-start index pass for the whole database, and a
+# second client for accounts would double the connection count against Atlas M0's small pool.
+_USERS = "users"
 
 
 def _database():
@@ -53,11 +57,15 @@ def _database():
 
 
 def _ensure_indexes(db) -> None:
-    """Create the indexes every hot path needs.
+    """Create the indexes every hot path needs, for every collection in this database.
 
     Idempotent and cheap when already present (the create call becomes a no-op server-side). The
     owner-scoped compound indexes are what keep listing and retrieval fast as the collection grows,
     and they mirror the filters Pinecone applies so both stores answer the same query shape.
+
+    The account indexes are created here too rather than in user_store because this is the one place
+    that runs once, against a live client. `email` is unique: it is the only thing standing between two
+    simultaneous signups for one address and two rows with two different hashes.
     """
     try:
         db[_DOCUMENTS].create_index([("owner_id", ASCENDING), ("uploaded_at", -1)])
@@ -66,6 +74,8 @@ def _ensure_indexes(db) -> None:
         # One index serves both "load a thread in order" and "append the next message".
         db[_MESSAGES].create_index([("conversation_id", ASCENDING), ("created_at", ASCENDING)])
         db[_MESSAGES].create_index([("owner_id", ASCENDING), ("conversation_id", ASCENDING)])
+        db[_USERS].create_index("email", unique=True)
+        db[_USERS].create_index("user_id", unique=True)
     except PyMongoError as exc:
         # Do not crash the app over an index: Atlas may be briefly unreachable during a cold start,
         # and a missing index slows reads rather than corrupting them.

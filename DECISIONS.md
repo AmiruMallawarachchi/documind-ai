@@ -62,6 +62,11 @@ what was given up.
 | CORS allowlist from config, never `*` | A wildcard lets any website in the world spend your Groq and Pinecone quota on a stranger's behalf | One more env var to set correctly at deploy |
 | Extension + size validation before parsing | A hostile PDF should cost nothing but the request | Two rejections to explain in the UI |
 | Rate limit enforced before reading upload bytes | Otherwise the limit only bounds the damage after the damage | — |
+| Argon2id at `m=19456,t=2,p=1` for passwords | Memory-hard, so a leaked hash table cannot be attacked with a GPU the way bcrypt can; these are OWASP's floor for a constrained server, and Render's free 512 MB with one shared CPU is what caps it above that floor | ~20 MiB and tens of ms per login, so the suite hashes for real and is slow |
+| The password policy lives in `create_hash`, not only in the request model | Hashing is one module's job, so a future caller that forgets to validate still cannot store a weak hash | A second place a 422 can originate from |
+| `blind_verify()` on the no-such-account login path | "Unknown email" answering in 1 ms against "wrong password" in 60 ms is a free oracle for enumerating who has an account | Every failed login costs a hash, including the ones that found nothing |
+| A random hex `user_id`, not an ObjectId | The account id ends up inside a verification link; a sequential one makes "this address registered, and so is the next" guessable | A 32-char key where 24 would have done |
+| `email` normalised to lowercase by one shared function, then enforced by a unique index | Two spellings of one mailbox would otherwise become two accounts with two hashes, and the index is the only place a concurrent duplicate can be seen | Case-insensitive login, and a `ValueError` for an address too long to receive mail |
 
 ## Frontend
 
@@ -101,6 +106,8 @@ what was given up.
 | A separate `test_llm_retry.py` with a model that *fails* | The agent tests need a model that answers; the interesting rules are in the failure paths — which statuses retry, how long the user waits, and never restarting a stream that already showed words | A scripted stub per failure shape |
 | Assert the **query shape** against fakes that record calls (`test_vector_store`, `test_metadata_store`) | An in-memory fake store never notices a missing `owner_id` filter — which is the one bug class that leaks another user's documents | Tests that break when a filter is legitimately restructured |
 | Fake method signatures spelled out, never `**kwargs`, plus one test that reads the installed SDK's signature | The first version of this fake took `**kwargs` — exactly like the real client — so it recorded `filters=` happily while production dropped it. 202 tests were green through a live cross-owner leak | A fake that must change when the client's signature changes, which is the moment worth being told |
+| The fake `users` collection refuses a write that breaks a unique index | A fake that accepts every insert would let two accounts for one address through and the signup endpoint would still look correct — the same permissiveness that hid the `filters=` leak | The fake has to know which indexes the real collection declares |
+| One test asserts `InvalidHashError` is *not* under `Argon2Error` | argon2-cffi raises a `ValueError` for a hash it cannot parse and an `Argon2Error` for a wrong password, so a single-tree `except` turns a malformed row into a 500 on the login path. Mocking the hasher could never reveal this | A test that reads a dependency's exception tree, which is a thing to update on upgrade |
 | Tests run in `development` mode by default; `test_auth.py` flips it per test | Keeps the 73 older tests on the `X-Demo-Key` path while production-mode rules get real coverage | Two mode conventions in one suite |
 | An autouse fixture resets the limiter between tests | A shared `deque` would make unrelated tests fail depending on execution order | One more fixture to understand |
 | `time.sleep` patched in backoff tests | Three exponential waits would otherwise hang the suite on real delays | Waits asserted by recorded value, not by elapsed time |
