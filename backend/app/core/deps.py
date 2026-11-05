@@ -83,11 +83,27 @@ def upload_rate_limit(owner_id: str = Depends(current_owner_id)) -> None:
 
 
 def login_rate_limit(request: Request) -> None:
-    """Cap session attempts per address — the only limit that can apply before an identity exists.
+    """Cap sign-in and verification attempts per address — the limit that can apply before an identity
+    exists.
 
-    The code is published, so this is not really about guessing it; it is about stopping one machine from
-    minting thousands of owner namespaces, each of which would carry its own budget.
+    Login is what an attacker uses to test a stolen credential list, and each refusal here is an Argon2
+    verification the server pays for. The per-address bucket is the only handle available: until a session
+    is minted there is no owner id to key on, and the address comes from `X-Forwarded-For`.
     """
     retry_after = limiter.check("login", client_address(request), settings.login_requests_per_minute)
     if retry_after:
-        reject("session attempts per minute", retry_after)
+        reject("sign-in attempts per minute", retry_after)
+
+
+def signup_rate_limit(request: Request) -> None:
+    """Cap account creation and link resending per address, over an hour.
+
+    The budget this protects is not CPU, it is two things that accumulate: rows in a 512 MB Atlas cluster
+    and mails sent through a Gmail account that will rate-limit or lock the sender if it is used as a
+    relay for strangers. A five-per-minute bucket would let a script open hundreds of accounts an hour.
+    """
+    retry_after = limiter.check(
+        "signup", client_address(request), settings.signup_requests_per_hour, window_seconds=3600
+    )
+    if retry_after:
+        reject("sign-up attempts per hour", retry_after)

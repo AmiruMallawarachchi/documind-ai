@@ -14,7 +14,8 @@ WHY fail-fast beats scattered os.getenv():
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, model_validator
+from typing import Literal
 
 
 class Settings(BaseSettings):
@@ -64,12 +65,49 @@ class Settings(BaseSettings):
     )
     jwt_ttl_minutes: int = Field(default=1440, description="Session lifetime; a day suits a demo.")
 
+    # A verification link that expires in five minutes is a support ticket; one that never expires is a
+    # phishing forward. A day fits a demo whose reviewer may register, close the tab, and come back.
+    verification_ttl_minutes: int = Field(default=1440, description="How long a verification link stays valid.")
+
     # ── Rate limits ───────────────────────────────────────────────────────────
     # Per owner (login is per client address, which has no owner yet). These protect the free-tier Groq
     # and Pinecone budgets from one runaway client, which is the same quota every visitor shares.
     chat_requests_per_minute: int = Field(default=10, description="Max /api/chat calls per owner per minute.")
     upload_requests_per_minute: int = Field(default=6, description="Max /api/upload calls per owner per minute.")
-    login_requests_per_minute: int = Field(default=5, description="Max /api/auth/session calls per address.")
+    login_requests_per_minute: int = Field(default=5, description="Max /api/auth calls per address per minute.")
+    # Signup gets an hour-long window instead: the cost it protects against is not a fast script but a slow
+    # one filling the free Atlas cluster with unverified accounts, and one visitor legitimately needs a
+    # second chance when the first email lands in spam.
+    signup_requests_per_hour: int = Field(
+        default=8, description="Max /api/auth/register and /resend calls per address per hour."
+    )
+
+    # ── Mail ──────────────────────────────────────────────────────────────────
+    # Verification links go out through one of two transports. `console` writes the link to the log instead
+    # of sending it, which is what lets the suite, a fresh clone, and a reviewer with no SMTP credentials
+    # reach a verified account at all. `smtp` is the deployed setting and is configured for Gmail's App
+    # Password flow: smtp.gmail.com:465 over implicit TLS.
+    mail_transport: Literal["console", "smtp"] = Field(
+        default="console",
+        description="'console' logs the message; 'smtp' sends it through Gmail. Anything else is refused at boot.",
+    )
+    smtp_host: str = Field(default="smtp.gmail.com", description="SMTP relay host.")
+    smtp_port: int = Field(default=465, description="SMTP relay port; 465 is implicit TLS.")
+    # Both empty by default and required together: an SMTP transport with no credentials is a
+    # misconfiguration that would only show up when a real visitor tried to confirm their address, so it
+    # fails at boot instead. They are never logged, and the sender address is the same account.
+    smtp_user: str = Field(default="", description="The Gmail address that sends verification mail (SMTP_USER).")
+    smtp_password: str = Field(
+        default="",
+        description="A Gmail App Password for that address (SMTP_PASSWORD) — not the account password.",
+    )
+
+    # The verification link points at the frontend, which is a separate origin from this API. Read from
+    # config rather than derived from the request because behind Render's proxy the Host header is the API's
+    # own, and a link built from it would send the visitor to onrender.com.
+    frontend_base_url: str = Field(
+        default="http://localhost:3000", description="Public origin of the Next.js app, no trailing slash."
+    )
 
     # ── CORS ──────────────────────────────────────────────────────────────────
     # Comma-separated list of allowed origins, e.g. "http://localhost:3000,https://yourapp.vercel.app"
@@ -115,10 +153,34 @@ class Settings(BaseSettings):
     # in production (Render) the vars come from the dashboard instead.
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
 
+    @model_validator(mode="after")
+    def _smtp_transport_requires_credentials(self) -> "Settings":
+        """Refuse to boot an SMTP configuration that cannot send.
+
+        WHY: `MAIL_TRANSPORT=smtp` with a blank password is a deploy-time typo, and the only way it shows
+        up is a visitor waiting for an email that never leaves the process. Fail at boot with the name of
+        the missing variable instead.
+        """
+        if self.mail_transport == "smtp" and not (self.smtp_user.strip() and self.smtp_password.strip()):
+            raise ValueError(
+                "MAIL_TRANSPORT=smtp needs both SMTP_USER and SMTP_PASSWORD. For a local run, leave "
+                "MAIL_TRANSPORT=console and the verification link is written to the log instead."
+            )
+        return self
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Split the comma-separated string into a list FastAPI's CORSMiddleware expects."""
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def frontend_origin(self) -> str:
+        """The frontend base URL with any trailing slash removed.
+
+        Concatenated into `/verify?token=...`, so one stray slash in the dashboard setting would otherwise
+        produce a link the browser resolves to the wrong path.
+        """
+        return self.frontend_base_url.strip().rstrip("/")
 
     @property
     def allowed_extensions_set(self) -> set[str]:
