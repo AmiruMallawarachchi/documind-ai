@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Importing settings here validates every required env var before anything else runs, so a missing
 # key aborts at boot with a clear message instead of failing mid-request deep inside a library stack.
 from app.core.config import settings
+from app.core.logging import AccessLogMiddleware, configure_logging
 from app.routers import auth, chat, documents, health
 
 
@@ -29,11 +30,20 @@ async def lifespan(app: FastAPI):
     and ~90 MB, and paying that inside a user's request is exactly how a free-tier instance behind a
     60-second proxy timeout produces its first mysterious 504.
     """
+    configure_logging(production=settings.is_production)
     logger = logging.getLogger("documind.startup")
     logger.info(
-        "documind-ai %s starting", settings.app_version
+        "documind-ai %s starting (env=%s)", settings.app_version, settings.environment
     )
 
+    if not settings.is_production:
+        # Surface a misconfigured Atlas now, instead of on the first real upload.
+        try:
+            from app.services import metadata_store
+
+            logger.info("mongo reachable: %s", metadata_store.ping())
+        except Exception as exc:
+            logger.warning("mongo startup probe failed: %s", exc)
 
     try:
         from app.services.embedding_service import get_model
@@ -60,6 +70,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── Request context ───────────────────────────────────────────────────────────
+# Added before CORSMiddleware so that CORS ends up the outer layer: a preflight response still carries
+# X-Request-ID, and the access log measures the real handler rather than the options round trip.
+app.add_middleware(AccessLogMiddleware)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 # allow_origins comes from the env var, never "*".
@@ -75,8 +89,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     # Authorization is the header real clients now send; keeping the list explicit still means a typo in
     # the frontend surfaces as a clear CORS error rather than a preflight that quietly passed.
-    allow_headers=["Authorization", "Content-Type", "X-Demo-Key"],
-    expose_headers=["Retry-After"],
+    allow_headers=["Authorization", "Content-Type", "X-Demo-Key", "X-Request-ID"],
+    expose_headers=["X-Request-ID", "Retry-After"],
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
