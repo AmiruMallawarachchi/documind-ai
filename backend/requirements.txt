@@ -35,3 +35,8 @@ PyJWT==2.15.1
 # argon2-cffi brings its own binary wheel: the Dockerfile still needs no apt layer, which is the
 # constraint that shaped the rest of this file.
 argon2-cffi==25.1.0
+
+# Address validation for the `EmailStr` fields in models/auth.py. pydantic can import this on its own and
+# fail at request time with "EmailStr requires email-validator" instead of at boot, so it is pinned here
+# rather than left as somebody's transitive dependency.
+email-validator==2.3.0

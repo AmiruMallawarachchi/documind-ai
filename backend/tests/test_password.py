@@ -92,9 +92,18 @@ def test_a_digitsuffix_of_a_breach_list_password_is_still_refused():
     assert "too common" in password.policy_error("1monkey12345")
 
 
-def test_the_email_local_part_cannot_be_the_password():
+def test_a_password_that_reuses_the_email_local_part_is_refused():
+    """The local part is the half of an address an attacker always knows, so embedding it — inside a
+    longer password or as the whole thing — is not a password the form should accept."""
+    assert "email address" in password.policy_error("amirunoel8-2026-pass", email="amirunoel8@gmail.com")
     assert password.policy_error("amirunoel", email="amirunoel8@gmail.com") is not None
     assert password.policy_error("herons-quietly-fold-6", email="amirunoel8@gmail.com") is None
+
+
+def test_a_short_local_part_does_not_forbid_its_own_letters():
+    """`a@b.com` is a real address. A rule that refuses any password containing "a" punishes the user for
+    the shape of their mailbox, so the fragment has to have some length to be meaningful."""
+    assert password.policy_error("abcdefghijkl", email="a@b.com") is None
 
 
 def test_the_floor_itself_is_acceptable():
@@ -108,6 +117,16 @@ def test_creating_a_hash_cannot_be_routed_around_the_policy():
     weak hash by skipping validation upstream."""
     with pytest.raises(password.PasswordPolicyError):
         password.create_hash("hunter2")
+
+
+def test_creating_a_hash_applies_the_email_rule_too():
+    """`policy_error` can only check an address against a password if `create_hash` passes it along. A
+    router that forgot to call policy_error itself would otherwise store the reusable kind of password."""
+    with pytest.raises(password.PasswordPolicyError) as raised:
+        password.create_hash("amirunoel8abc", email="amirunoel8@gmail.com")
+
+    assert "email address" in str(raised.value)
+    assert password.create_hash("amirunoel8abc", email="someoneelse@work.example")
 
 
 # ── failure modes must not become server errors ────────────────────────────────

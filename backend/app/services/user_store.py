@@ -115,6 +115,19 @@ def mark_verified(user_id: str) -> bool:
     return find_by_id(user_id) is not None
 
 
+def store_password_hash(user_id: str, password_hash: str) -> None:
+    """Replace an account's hash.
+
+    The only intended caller is the login path, on the one occasion the plaintext is available and the old
+    hash has just verified: a cost increase in `core/password.py` then reaches existing accounts as they
+    sign in, which is the only way to move them without asking anyone to change a working password.
+    """
+    _database()[_USERS].update_one(
+        {"user_id": user_id},
+        {"$set": {"password_hash": password_hash}},
+    )
+
+
 def count_accounts() -> int:
     """How many accounts exist — for /api/health/deep and for a demo seed that must stay idempotent."""
     return _database()[_USERS].count_documents({})

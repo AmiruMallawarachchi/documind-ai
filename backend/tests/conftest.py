@@ -35,6 +35,10 @@ os.environ.setdefault("DEMO_ACCESS_CODE", "test-access-code")
 os.environ.setdefault("CHAT_REQUESTS_PER_MINUTE", "1000")
 os.environ.setdefault("UPLOAD_REQUESTS_PER_MINUTE", "1000")
 os.environ.setdefault("LOGIN_REQUESTS_PER_MINUTE", "1000")
+os.environ.setdefault("SIGNUP_REQUESTS_PER_HOUR", "1000")
+# The verification link is assembled from this, and the tests assert on the link itself — a default taken
+# from the developer's own frontend_base_url would make them fail on someone else's machine.
+os.environ.setdefault("FRONTEND_BASE_URL", "http://localhost:3000")
 # Tests run under the same no-wildcard CORS rule as production, so a regression there shows up here.
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
 # Left at the default (development) so the X-Demo-Key fallback stays available: the isolation tests stand
@@ -44,6 +48,7 @@ os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.models.document import RetrievedChunk
 
 # Mongo returns real datetime objects, so the fake must too. An ISO string here made to_iso receive the
@@ -158,6 +163,103 @@ class FakeMetadataStore:
 
     def ping(self):
         return True
+
+
+class FakeUserStore:
+    """Accounts, keyed by normalised email, with the same signatures as user_store.
+
+    Two behaviours are implemented rather than skipped because the endpoints depend on them: a duplicate
+    email raises the same `AccountExistsError` the real service raises off its unique index, and rows carry
+    no `_id`. A fake that accepted a second signup for one address would let the enumeration tests pass
+    against something more permissive than production.
+
+    `normalize_email` stays real (patched only where the module attribute is read, which is nowhere here):
+    the tests must normalise login lookups with exactly the function that normalised the signup insert.
+    """
+
+    def __init__(self) -> None:
+        self.accounts: dict[str, dict] = {}
+        self._counter = 0
+
+    def create_account(self, email, password_hash):
+        from app.services.user_store import AccountExistsError
+
+        normalised = email.strip().lower()
+        if normalised in self.accounts:
+            raise AccountExistsError(normalised)
+        self._counter += 1
+        record = {
+            "user_id": f"user-{self._counter:04d}",
+            "email": normalised,
+            "password_hash": password_hash,
+            "email_verified": False,
+            "created_at": STAMP,
+            "verified_at": None,
+        }
+        self.accounts[normalised] = record
+        return dict(record)
+
+    def find_by_email(self, email):
+        record = self.accounts.get(email.strip().lower())
+        return dict(record) if record else None
+
+    def find_by_id(self, user_id):
+        for record in self.accounts.values():
+            if record["user_id"] == user_id:
+                return dict(record)
+        return None
+
+    def mark_verified(self, user_id):
+        for record in self.accounts.values():
+            if record["user_id"] == user_id:
+                record["email_verified"] = True
+                record["verified_at"] = STAMP
+                return True
+        return False
+
+    def store_password_hash(self, user_id, password_hash):
+        for record in self.accounts.values():
+            if record["user_id"] == user_id:
+                record["password_hash"] = password_hash
+                return
+
+    def count_accounts(self):
+        return len(self.accounts)
+
+
+@pytest.fixture
+def fake_users(monkeypatch) -> FakeUserStore:
+    from app.services import user_store
+
+    fake = FakeUserStore()
+    for name in [
+        "create_account",
+        "find_by_email",
+        "find_by_id",
+        "mark_verified",
+        "store_password_hash",
+        "count_accounts",
+    ]:
+        monkeypatch.setattr(user_store, name, getattr(fake, name))
+    return fake
+
+
+@pytest.fixture
+def fake_mail(monkeypatch) -> list[dict]:
+    """Capture verification mails instead of opening a socket.
+
+    Patched at `app.core.mail`, the module the router calls through, so every caller is covered by one
+    attribute and no test can pass by reaching a live SMTP host.
+    """
+    from app.core import mail
+
+    sent: list[dict] = []
+
+    def fake_send_link(to, link):
+        sent.append({"to": to, "link": link})
+
+    monkeypatch.setattr(mail, "send_verification_link", fake_send_link)
+    return sent
 
 
 @pytest.fixture(autouse=True)
@@ -318,8 +420,24 @@ def fake_llm(monkeypatch) -> dict:
 
 
 @pytest.fixture
-def client(monkeypatch, fake_metadata, fake_vectors, fake_embedding, fake_llm):
-    """TestClient with every external boundary faked and no model download at startup."""
+def production_mode(monkeypatch):
+    """Make the app behave like the deployed one: JWT or nothing.
+
+    A fixture rather than an env var because the rule is read at request time, so flipping the setting is
+    enough — and it keeps the rest of the suite on the X-Demo-Key path it was written for. Lives here
+    because two files need it: the session tests and the account tests both mint real tokens.
+    """
+    monkeypatch.setattr(settings, "environment", "production")
+    assert settings.is_production
+
+
+@pytest.fixture
+def client(monkeypatch, fake_metadata, fake_users, fake_mail, fake_vectors, fake_embedding, fake_llm):
+    """TestClient with every external boundary faked and no model download at startup.
+
+    `fake_mail` is here rather than only in the auth tests because the register endpoint sends on every
+    path: an unfaked transport would open a TLS socket to smtp.gmail.com from a test run.
+    """
     from app.main import app
     from app.services import embedding_service
 
