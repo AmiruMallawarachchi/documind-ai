@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+/*
+ * DocuMind is dark by design: the workspace is a dense text surface and the citation chips, status
+ * badges, and streaming caret all assume a low-light palette. Following the OS theme would mean two
+ * colour stories to maintain for one internal tool, so the tokens are fixed and `color-scheme` tells the
+ * browser to render native controls (scrollbars, the scope checkboxes) to match.
+ */
+:root {
+  --background: #09090b;
+  --foreground: #f4f4f5;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
