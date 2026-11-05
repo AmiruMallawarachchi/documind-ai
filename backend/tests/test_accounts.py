@@ -273,7 +273,10 @@ def test_a_confirmed_account_signs_in_and_gets_its_own_namespace(client, fake_ma
 
     assert response.status_code == 200, response.text
     body = response.json()
+    assert body["token_type"] == "Bearer"
+    assert body["access_token"].count(".") == 2  # header.payload.signature
     assert body["owner_id"] == record["user_id"]
+    assert body["expires_at"]
     documents = client.get("/api/documents", headers={"Authorization": f"Bearer {body['access_token']}"})
     assert documents.status_code == 200
 
@@ -362,15 +365,6 @@ def test_the_account_endpoints_are_sync_functions():
 
     for name in ("register", "resend_verification", "verify_email", "login"):
         assert not inspect.iscoroutinefunction(getattr(auth, name)), f"{name} must be sync"
-
-
-def test_the_old_access_code_flow_still_works(client):
-    """This change adds accounts; it does not remove the gate the deployed frontend calls today. The two
-    coexist until the UI switches over, and this test is what makes that switch a deliberate commit."""
-    response = client.post("/api/auth/session", json={"access_code": "test-access-code"})
-
-    assert response.status_code == 200
-    assert response.json()["access_token"].count(".") == 2
 
 
 def test_a_registration_email_is_not_required_to_be_lowercase(client, fake_mail):

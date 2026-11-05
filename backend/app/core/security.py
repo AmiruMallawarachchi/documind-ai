@@ -5,23 +5,16 @@ Two token kinds share this module and one secret. A session token's `sub` is the
 endpoint scopes its queries by; a verification token's `sub` is an account id and its `purpose` says what
 it is for. They are kept apart on purpose — see PURPOSE_VERIFY.
 
-The visitor path is mid-migration. `access_code_matches` and the device-key helpers serve the published
-demo code, which predates accounts; `mint_session` is the seam both paths share, so switching the frontend
-to email and password changes who mints the token and not how every router reads it.
-
-Two properties matter and they are different:
-  - The access code gates *whether* a caller may use the API at all. It is published in the README, so it
-    is a toll booth, not a secret.
-  - The signature gates *whose* namespace a caller gets. Someone who guesses that another visitor's owner
-    id still cannot mint a token for it, which is exactly what the old X-Demo-Key header allowed.
+Every session this module mints comes from POST /api/auth/login, which verified a password against
+`users.password_hash`. That is the property worth naming: the signature gates *whose* namespace a caller
+gets, so someone who happens to know another visitor's account id still cannot mint a token for it — which
+is exactly what the old `X-Demo-Key` header permitted, and still does outside production.
 
 HS256 is symmetric on purpose: one shared secret, no key distribution.
 """
 
 from __future__ import annotations
 
-import hmac
-import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -47,26 +40,14 @@ class AuthenticationError(Exception):
     """The caller produced no usable token. Routers turn this into a 401."""
 
 
-def new_device_key() -> str:
-    """A fresh owner id for a first-time visitor, handed back so the client can store it."""
-    return uuid.uuid4().hex
-
-
 def normalise_owner_id(candidate: str) -> str:
-    """Trim and bound a client-supplied device key, or raise if it is unusable."""
+    """Trim and bound a token subject, or raise if it is unusable."""
     cleaned = candidate.strip()
     if not cleaned:
-        raise AuthenticationError("device_key was sent but empty.")
+        raise AuthenticationError("The token carries an empty identity.")
     if len(cleaned) > MAX_OWNER_ID_LENGTH:
-        raise AuthenticationError(f"device_key must be {MAX_OWNER_ID_LENGTH} characters or fewer.")
+        raise AuthenticationError(f"An owner id must be {MAX_OWNER_ID_LENGTH} characters or fewer.")
     return cleaned
-
-
-def access_code_matches(candidate: str) -> bool:
-    """Constant-time compare, so the length and prefix of the real code are not observable in timing."""
-    if not candidate:
-        return False
-    return hmac.compare_digest(candidate.encode("utf-8"), settings.demo_access_code.encode("utf-8"))
 
 
 def _signed(claims: dict[str, Any]) -> str:

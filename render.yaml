@@ -39,10 +39,6 @@ services:
         sync: false
       - key: JWT_SECRET
         sync: false
-      - key: DEMO_ACCESS_CODE
-        # Still read by /api/auth/session, which the deployed frontend uses until the account UI lands.
-        # Removed from this file along with the endpoint.
-        sync: false
       - key: SMTP_PASSWORD
         # A Gmail App Password (myaccount.google.com/apppasswords), never the account password: it can be
         # revoked on its own, and it is the only credential that lets this service send mail as you.

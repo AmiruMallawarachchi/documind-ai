@@ -40,13 +40,13 @@ os.environ.setdefault(
     "http://localhost:3000,http://127.0.0.1:3000",
 )
 os.environ.setdefault("JWT_SECRET", "offline-secret-not-used-anywhere-else-32bytes")
-# The offline server runs in production mode (see below), so it enforces the same session-token rule a
-# deployed instance does. Typing this code in the UI once is what exercises that path locally.
-os.environ.setdefault("DEMO_ACCESS_CODE", "offline-demo")
-# Skips the MongoDB startup probe in the app lifespan.
+# The offline server runs in production mode, so it enforces the same session-token rule a deployed
+# instance does: signing in with the account seeded in install() is what exercises that path locally.
+# There is no shared code to type any more.
 os.environ.setdefault("ENVIRONMENT", "production")
 
 from app.agents import critique_agent, router_agent, synthesis_agent  # noqa: E402
+from app.core import password  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.models.document import RetrievedChunk  # noqa: E402
 from app.services import (  # noqa: E402
@@ -55,6 +55,7 @@ from app.services import (  # noqa: E402
     metadata_store,
     prompts,
     retrieval,
+    user_store,
     vector_store,
 )
 
@@ -88,6 +89,22 @@ METADATA_NAMES = [
     "get_conversation_messages",
     "ping",
 ]
+
+USER_STORE_NAMES = [
+    "create_account",
+    "find_by_email",
+    "find_by_id",
+    "mark_verified",
+    "store_password_hash",
+    "count_accounts",
+]
+
+# The one account the offline server accepts, printed at startup instead of a shared access code.
+# Signing in is what mints the Bearer token every other offline request needs, and because the store is a
+# dict, a fresh process starts with it again. The address ends in `.app` rather than `.test` because the
+# schema rejects reserved TLDs, and this value has to survive it: it is typed straight into the sign-in form.
+OFFLINE_EMAIL = "demo@documind.app"
+OFFLINE_PASSWORD = "quiet-harbor-2026"
 
 
 def _fake_upsert(*, document_id: str, owner_id: str, filename: str, vectors, metadatas) -> int:
@@ -171,10 +188,12 @@ def _fake_complete(messages, **kwargs):
 
 def install() -> list[mock._patch]:
     """Apply every patch and keep them alive for the process lifetime."""
-    from tests.conftest import FakeMetadataStore
+    from tests.conftest import FakeMetadataStore, FakeUserStore
 
     store = FakeMetadataStore()
+    users = FakeUserStore()
     patches = [mock.patch.object(metadata_store, name, getattr(store, name)) for name in METADATA_NAMES]
+    patches += [mock.patch.object(user_store, name, getattr(users, name)) for name in USER_STORE_NAMES]
     patches += [
         mock.patch.object(vector_store, "upsert_chunks", _fake_upsert),
         mock.patch.object(vector_store, "delete_document_vectors", _fake_delete),
@@ -194,6 +213,10 @@ def install() -> list[mock._patch]:
     ]
     for patcher in patches:
         patcher.start()
+    record = user_store.create_account(
+        email=OFFLINE_EMAIL, password_hash=password.create_hash(OFFLINE_PASSWORD, email=OFFLINE_EMAIL)
+    )
+    user_store.mark_verified(record["user_id"])
     return patches
 
 
@@ -205,7 +228,9 @@ def main() -> None:
     install()
     print(
         "\nDocuMind running OFFLINE: no Pinecone, no Mongo, no Groq.\n"
-        "Answers are canned by scripts/serve_offline.py — retrieval here is word overlap, not embeddings.\n",
+        "Answers are canned by scripts/serve_offline.py — retrieval here is word overlap, not embeddings.\n"
+        f"Sign in with {OFFLINE_EMAIL} / {OFFLINE_PASSWORD}; registering a new address prints its "
+        "confirmation link to this console instead of emailing it.\n",
         flush=True,
     )
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")

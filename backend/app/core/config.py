@@ -56,13 +56,6 @@ class Settings(BaseSettings):
         description="Random secret for JWT signing, e.g. openssl rand -hex 32. Shorter than 32 characters "
         "is refused at boot: HS256 keys below that are weak by RFC 7518 and PyJWT says so on every call.",
     )
-    # The code a visitor types once to open a session. It is not a secret in the usual sense — the README
-    # publishes it so reviewers can use the demo — so treat it as the price of entry, not as identity.
-    # What it buys is that a stranger cannot point a script at the Render URL without knowing it, and the
-    # JWT that follows carries the owner id, so the id cannot be forged into someone else's namespace.
-    demo_access_code: str = Field(
-        ..., min_length=6, description="Code required to mint a session JWT. Refused at boot if left blank."
-    )
     jwt_ttl_minutes: int = Field(default=1440, description="Session lifetime; a day suits a demo.")
 
     # A verification link that expires in five minutes is a support ticket; one that never expires is a

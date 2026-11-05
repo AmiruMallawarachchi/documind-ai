@@ -174,7 +174,6 @@ def build(**overrides) -> Settings:
         "pinecone_index_name": "i",
         "mongodb_uri": "mongodb://localhost:27017",
         "jwt_secret": "x" * 40,
-        "demo_access_code": "abcdef",
         "cors_origins": "http://localhost:3000",
     }
     return Settings(**{**base, **overrides})
