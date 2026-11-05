@@ -67,9 +67,12 @@ COMMON_PASSWORDS = frozenset(
     }
 )
 
-# Verified against when the signer is also the account holder, so "you@you.com" / "you@you.com" cannot
+# Checked against when the signer is also the account holder, so "you@you.com" / "you@you.com" cannot
 # pass a length-and-denylist check.
 _MIN_DISTINCT_CHARACTERS = 4
+# How long an email local part has to be before reusing it in a password is a meaningful signal rather
+# than a penalty for having a short address.
+_MIN_ADDRESS_FRAGMENT = 6
 
 
 def policy_error(password: str, *, email: str | None = None) -> str | None:
@@ -85,18 +88,24 @@ def policy_error(password: str, *, email: str | None = None) -> str | None:
         return "That password repeats too few characters to be safe."
     if email:
         local_part, _, _ = email.partition("@")
-        if local_part and lowered in local_part:
+        # Both directions. "amirunoel8" inside a longer password is the same mistake as a password that is
+        # a truncation of the address, and the local part is the one half of the address an attacker is
+        # certain to know — it is in the From line of every mail the account holder has ever sent.
+        # Only for a local part with some length to it: `a@b.com` would otherwise refuse every password
+        # containing the letter a, which punishes the user for the shape of their address.
+        if len(local_part) >= _MIN_ADDRESS_FRAGMENT and (local_part in lowered or lowered in local_part):
             return "Do not reuse part of your email address in your password."
     return None
 
 
-def create_hash(password: str) -> str:
+def create_hash(password: str, *, email: str | None = None) -> str:
     """Hash a new password, refusing one that does not meet the policy.
 
     The check lives here so `users.password_hash` can only ever hold a hash of a policy-meeting
-    password, whichever caller asked for it.
+    password, whichever caller asked for it. `email` is passed through rather than checked by the caller
+    so the "do not reuse your address" rule cannot be left out of a code path.
     """
-    reason = policy_error(password)
+    reason = policy_error(password, email=email)
     if reason is not None:
         raise PasswordPolicyError(reason)
     # Argon2 embeds a fresh random salt in the output, so two accounts with the same password produce

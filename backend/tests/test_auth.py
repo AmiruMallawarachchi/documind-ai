@@ -6,8 +6,9 @@ signed token, not from a header you typed. Each test below attacks one way that 
 token, wrong code, forged signature, expired token, someone else's owner id — and then checks the two
 limits that keep one client from spending the shared free-tier budget.
 
-`production_mode` is a fixture rather than an env var because the rule is read at request time: flipping
-the setting is enough, and it keeps the other 70-odd tests on the X-Demo-Key path they were written for.
+`production_mode` lives in conftest because the account tests mint real tokens too: it is a fixture rather
+than an env var because the rule is read at request time, and it keeps the other 70-odd tests on the
+X-Demo-Key path they were written for.
 """
 
 from __future__ import annotations
@@ -21,13 +22,6 @@ from app.core.security import access_code_matches, mint_session, owner_from_auth
 
 ACCESS_CODE = "test-access-code"
 PRODUCTION_HEADERS = {"Origin": "http://localhost:3000"}
-
-
-@pytest.fixture
-def production_mode(monkeypatch):
-    """Make the app behave like the deployed one: JWT or nothing."""
-    monkeypatch.setattr(settings, "environment", "production")
-    assert settings.is_production
 
 
 def session(client, **overrides):
