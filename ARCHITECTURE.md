@@ -255,7 +255,7 @@ Next.js 16 App Router, one route, no server rendering of user data.
 
 ## 8. Testing strategy
 
-`cd backend && pytest` — **200 tests, no network, no credentials.**
+`cd backend && pytest` — **203 tests, no network, no credentials.**
 
 | File | Covers | Why it is separate |
 |---|---|---|
