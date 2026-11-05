@@ -8,7 +8,10 @@ Pinecone itself is not under test here; the two rules the module documents are:
   2. re-indexing deletes first, so a re-upload cannot leave a stale vector behind to be cited.
 
 Both are observable from the calls the service makes, so a fake index that records them is enough —
-no API key, no network, and the assertions survive a Pinecone SDK upgrade.
+no API key, no network. The fake spells out its keyword names instead of soaking them up with
+**kwargs, because the real client takes **kwargs too, and a live upload showed how a wrong keyword
+(`filters=` for `filter=`) survives a permissive fake while silently disabling the owner scope. The
+SDK's own signature is pinned by one test so an upgrade that renames it fails loudly.
 """
 
 from __future__ import annotations
@@ -22,7 +25,13 @@ from app.services import vector_store
 
 
 class FakeIndex:
-    """Records every call and replays canned query matches."""
+    """Records every call and replays canned query matches.
+
+    The keyword names are spelled out rather than soaked up by **kwargs, on purpose: the real client
+    takes **kwargs too, and that is exactly how `filters=` instead of `filter=` survived here while it
+    silently disabled owner scoping in production. A strict signature makes the fake reject a name the
+    client would also have ignored.
+    """
 
     def __init__(self, *, matches=None, query_matches=None) -> None:
         self.calls: list[tuple[str, dict]] = []
@@ -37,14 +46,16 @@ class FakeIndex:
         self.calls.append(("upsert", {"count": len(vectors)}))
         self.upserted.append(vectors)
 
-    def query(self, **kwargs):
-        self.calls.append(("query", kwargs))
+    def query(self, *, vector, top_k, filter=None, include_metadata=False):
+        self.calls.append(
+            ("query", {"vector": vector, "top_k": top_k, "filter": filter, "include_metadata": include_metadata})
+        )
         chosen = self.query_matches if self.query_matches is not None else self.matches
         return SimpleNamespace(matches=chosen)
 
-    def delete(self, **kwargs):
-        self.calls.append(("delete", kwargs))
-        self.deleted_filters.append(kwargs["filters"])
+    def delete(self, *, filter=None, delete_all=None, ids=None):
+        self.calls.append(("delete", {"filter": filter, "delete_all": delete_all, "ids": ids}))
+        self.deleted_filters.append(filter)
 
     def describe_index_stats(self):
         self.calls.append(("stats", {}))
@@ -85,14 +96,14 @@ def test_a_search_always_filters_on_the_owner(use_index):
 
     results = vector_store.query_similar(owner_id="owner-a", query_vector=[0.1] * 3)
 
-    assert use_index.calls[0][1]["filters"] == {"owner_id": "owner-a"}
+    assert use_index.calls[0][1]["filter"] == {"owner_id": "owner-a"}
     assert results[0].chunk_text == "The fee is 250 dollars."
 
 
 def test_a_document_scope_becomes_an_in_filter(use_index):
     vector_store.query_similar(owner_id="owner-a", query_vector=[0.1], document_ids=["doc-1", "doc-2"])
 
-    assert use_index.calls[0][1]["filters"] == {
+    assert use_index.calls[0][1]["filter"] == {
         "owner_id": "owner-a",
         "document_id": {"$in": ["doc-1", "doc-2"]},
     }
@@ -238,6 +249,27 @@ def test_the_delete_probe_uses_a_vector_the_width_of_the_index(use_index, monkey
     vector_store.delete_document_vectors(document_id="doc-1", owner_id="owner-a")
 
     assert use_index.calls[0][1]["vector"] == [0.0] * 4
+
+
+# ── the real client signature ──────────────────────────────────────────────────
+
+
+def test_the_filter_keyword_is_the_one_the_installed_client_accepts():
+    """The fake is only strict if the real client is. A live upload proved it was not.
+
+    pinecone.Index swallows unknown keywords into **kwargs, so `filters=` was accepted by Python,
+    dropped by the client, and the query ran unscoped. Pinning the parameter names against the
+    installed SDK means a future rename fails here instead of quietly returning another owner's
+    chunks.
+    """
+    import inspect
+
+    from pinecone import Index
+
+    for method in ("query", "delete"):
+        parameters = inspect.signature(getattr(Index, method)).parameters
+        assert "filter" in parameters, f"pinecone.Index.{method} no longer takes `filter`"
+        assert "filters" not in parameters, f"pinecone.Index.{method} now takes `filters`; the service is unscoped"
 
 
 # ── health statistics ──────────────────────────────────────────────────────────
