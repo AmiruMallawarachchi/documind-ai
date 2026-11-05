@@ -31,6 +31,29 @@ class Settings(BaseSettings):
     # reminder; enforcement is in the mongo_service (Phase 1).
     mongodb_uri: str = Field(..., description="MongoDB Atlas connection string — get from Atlas dashboard")
 
+    # ── Auth ──────────────────────────────────────────────────────────────────
+    jwt_secret: str = Field(
+        ...,
+        min_length=32,
+        description="Random secret for JWT signing, e.g. openssl rand -hex 32. Shorter than 32 characters "
+        "is refused at boot: HS256 keys below that are weak by RFC 7518 and PyJWT says so on every call.",
+    )
+    # The code a visitor types once to open a session. It is not a secret in the usual sense — the README
+    # publishes it so reviewers can use the demo — so treat it as the price of entry, not as identity.
+    # What it buys is that a stranger cannot point a script at the Render URL without knowing it, and the
+    # JWT that follows carries the owner id, so the id cannot be forged into someone else's namespace.
+    demo_access_code: str = Field(
+        ..., min_length=6, description="Code required to mint a session JWT. Refused at boot if left blank."
+    )
+    jwt_ttl_minutes: int = Field(default=1440, description="Session lifetime; a day suits a demo.")
+
+    # ── Rate limits ───────────────────────────────────────────────────────────
+    # Per owner (login is per client address, which has no owner yet). These protect the free-tier Groq
+    # and Pinecone budgets from one runaway client, which is the same quota every visitor shares.
+    chat_requests_per_minute: int = Field(default=10, description="Max /api/chat calls per owner per minute.")
+    upload_requests_per_minute: int = Field(default=6, description="Max /api/upload calls per owner per minute.")
+    login_requests_per_minute: int = Field(default=5, description="Max /api/auth/session calls per address.")
+
     # ── CORS ──────────────────────────────────────────────────────────────────
     # Comma-separated list of allowed origins, e.g. "http://localhost:3000,https://yourapp.vercel.app"
     # We deliberately do NOT default to "*" — that would expose your free-tier
