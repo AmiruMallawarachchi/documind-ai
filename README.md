@@ -1,8 +1,8 @@
 # DocuMind AI
 
-> **Project status:** 🟢 Phases 0–6 complete — ingestion, multi-agent graph, streaming chat UI, auth,
-> rate limiting, structured logging, and a 200-test suite that runs with no credentials.
-> Phase 7 (deploy) needs live keys; see [Deployment](#deployment-render--vercel).
+> **Project status:** 🟢 Live. Phases 0–7 complete — ingestion, multi-agent graph, streaming chat UI,
+> auth, rate limiting, structured logging, a 203-test suite that runs with no credentials, and a
+> deployed backend + frontend. See [Deployment](#deployment-render--vercel) for how it is wired.
 
 **What it is:** a document Q&A demo where answers are verified before you see them. Upload PDFs, DOCX,
 or TXT; ask a question; a four-agent LangGraph pipeline retrieves the relevant passages, drafts an
@@ -20,15 +20,15 @@ scale. Every backing service is on a permanently free tier and no credit card is
 
 ## Live demo
 
-*Fill these two URLs in after the first Render + Vercel deploy; until then, drive the whole product
-locally with the [offline server](#running-locally-without-any-keys), which needs no keys at all.*
+Try it in the browser, or drive the same product locally with the
+[offline server](#running-locally-without-any-keys), which needs no keys at all.
 
 | | URL |
 |---|---|
-| App | `https://<project>.vercel.app` |
-| API health (plain text status line) | `https://<service>.onrender.com/api/health` |
-| Dependency status | `https://<service>.onrender.com/api/health/deep` |
-| Interactive API docs | `https://<service>.onrender.com/api/docs` |
+| App | https://documind-kappa-indol.vercel.app |
+| API health (plain text status line) | https://documind-backend-erw5.onrender.com/api/health |
+| Dependency status | https://documind-backend-erw5.onrender.com/api/health/deep |
+| Interactive API docs | https://documind-backend-erw5.onrender.com/api/docs |
 
 **Is it up?** `GET /api/health` returns `{"status": "ok", "version": "…"}` from the process itself and
 never touches a database — deliberately, because Render restarts a container that fails its health
@@ -36,18 +36,18 @@ check, and a five-second Atlas blip should not become a restart loop. `/api/heal
 reports Mongo and Pinecone; it always returns 200 and is meant for a human, never for an automated
 restart policy.
 
-Once deployed, add a live badge — this reads the `status` field straight out of `/api/health`:
+A live badge, reading the `status` field straight out of `/api/health`:
 
-```markdown
-![backend](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2F%3Cservice%3E.onrender.com%2Fapi%2Fhealth&query=%24.status&label=backend&color=success)
-```
+[![backend](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdocumind-backend-erw5.onrender.com%2Fapi%2Fhealth&query=%24.status&label=backend&color=success)](https://documind-backend-erw5.onrender.com/api/health)
 
 (A `shields.io/endpoint` badge would need the endpoint to return `{"schemaVersion":1,…}`, which
 `/api/health` deliberately does not: its shape is the app's own, not a badge vendor's.)
 
-**Access:** the app opens with a single field. Type the access code published in the demo's README (or
-the repo's deployment notes) and the backend mints a session token scoped to your own document
-namespace. Locally, the code is `offline-demo`.
+**Access:** the app opens with a single field. Type the access code and the backend mints a session
+token scoped to your own document namespace, so every later read and search is filtered to what you
+uploaded. The live code is set as `DEMO_ACCESS_CODE` on Render and is deliberately not in this repo:
+it is the only thing standing between a stranger's browser and the project's free-tier Groq quota.
+Locally, the code is `offline-demo`.
 
 ---
 
@@ -176,7 +176,7 @@ a crash at boot beats a 500 buried inside a LangChain call stack mid-request.
 ## Tests
 
 ```bash
-cd backend && pytest -q          # 200 tests, no network, no credentials
+cd backend && pytest -q          # 203 tests, no network, no credentials
 ruff check app tests scripts
 cd ../frontend && npm run lint && npm run build
 ```
@@ -199,8 +199,13 @@ reviewable source rather than a dashboard screenshot.
 2. Add every secret in Render's dashboard (the Blueprint declares them `sync: false` — values never
    appear in the repo). **Never in the Dockerfile:** `ENV` lines are baked into the image and readable
    by anyone who can pull it.
-3. Set `CORS_ORIGINS` to the exact Vercel origin once it exists, and `ENVIRONMENT=production`.
+3. `CORS_ORIGINS` is the one non-secret that deployment needs, so it is a literal in `render.yaml`
+   rather than a dashboard value: an origin is visible in every preflight response, and keeping it in
+   the file means a Blueprint sync cannot quietly drop it and reopen the API to any page on the
+   internet.
 4. Start command is the image's `CMD`; Render injects `$PORT` (10000) and uvicorn binds to it.
+
+The live Blueprint is `documind` → service `documind-backend`, built from `main`.
 
 The image pins `torch==2.15.0+cpu` from PyTorch's CPU index. The default wheel drags ~2 GB of CUDA
 runtime into a container that will never see a GPU, and the free tier's 512 MB RAM is the binding
@@ -213,6 +218,10 @@ question after every cold start spends seconds and ~100 MB of egress downloading
 2. Add `NEXT_PUBLIC_API_URL` = the Render URL (it is inlined into the client bundle at build time, so
    changing it needs a redeploy).
 3. Deploys automatically on every push to `main`.
+
+The project is `documind`, so the production alias is `documind-kappa-indol.vercel.app` — the Vercel
+domain carries a random suffix even when the project name is taken, which is why `CORS_ORIGINS` in
+`render.yaml` names it in full instead of guessing from the project slug.
 
 **Cold starts — the choice made here.** Render's free instance spins down after ~15 minutes idle and
 takes about a minute to wake. This project takes option 1 from `system.md`: **accept it and design for
@@ -260,9 +269,9 @@ Stated plainly, because a list of limits is the most honest part of a portfolio 
 | 3 · Multi-agent | router → retrieval → synthesis → critique, bounded revision loop | ✅ |
 | 4 · Frontend | Streaming chat UI, citations, upload + document scope, history | ✅ |
 | 5 · Hardening | JWT sessions, rate limiting, retry/backoff, JSON logs, upload validation | ✅ |
-| 6 · Testing | 200 tests: unit, integration, smoke, query-shape assertions | ✅ |
-| 7 · Deploy + docs | Render + Vercel, this README, `ARCHITECTURE.md`, demo video | ⏳ needs keys |
-| 8 · Portfolio polish (stretch) | Write-up for Amiru AI Lab / HuggingFace | ⬜ |
+| 6 · Testing | 203 tests: unit, integration, smoke, query-shape assertions | ✅ |
+| 7 · Deploy + docs | Render + Vercel, this README, `ARCHITECTURE.md` | ✅ live |
+| 8 · Portfolio polish (stretch) | Demo video, write-up for Amiru AI Lab / HuggingFace | ⬜ |
 
 Design decision log: [`DECISIONS.md`](DECISIONS.md).
 

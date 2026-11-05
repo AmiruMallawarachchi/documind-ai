@@ -51,8 +51,11 @@ services:
         # reason the router agent cannot share a budget with a thinking model.
         value: qwen/qwen3.8-27b
       - key: CORS_ORIGINS
-        # Must be the exact Vercel origin after the first frontend deploy; never "*" in production.
-        sync: false
+        # The exact Vercel origin, never "*": a wildcard would hand the free-tier Groq and Pinecone
+        # quotas to any page that finds this URL. A literal rather than `sync: false`, because an origin
+        # is public information — it appears in every preflight response — and a Blueprint sync must
+        # not be able to silently drop the one value that keeps the API closed to strangers.
+        value: https://documind-kappa-indol.vercel.app
       - key: ENVIRONMENT
         value: production
 
