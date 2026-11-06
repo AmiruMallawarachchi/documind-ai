@@ -78,7 +78,7 @@ export default function ChatPanel({
       </div>
 
       {error && (
-        <div className="mx-4 mb-2 flex items-start justify-between gap-3 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300 sm:mx-6">
+        <div className="mx-4 mb-2 flex items-start justify-between gap-3 rounded-lg bg-red-950/50 px-3 py-2 text-xs text-red-300 sm:mx-6">
           <p>{error}</p>
           <button
             type="button"
@@ -149,14 +149,12 @@ export default function ChatPanel({
 function EmptyState({ indexedCount }: { indexedCount: number }) {
   if (indexedCount === 0) {
     return (
-      <div className="mx-auto max-w-md rounded-2xl border border-dashed border-zinc-800 p-8 text-center">
-        <h2 className="text-sm font-semibold text-zinc-200">
-          No indexed documents yet
-        </h2>
+      <div className="mx-auto max-w-md py-10 text-center">
+        <h2 className="text-sm font-semibold text-zinc-300">Nothing to answer from yet</h2>
         <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-          Upload a PDF, DOCX, or TXT file in the panel on the left and wait for its status to turn
-          green. DocuMind only answers from documents it has finished indexing — scanned, image-only
-          PDFs have no text to search.
+          Upload a PDF, DOCX, or TXT file on the left and wait for its status to turn green. DocuMind
+          only answers from documents it has finished indexing — scanned, image-only PDFs have no text to
+          search.
         </p>
       </div>
     );

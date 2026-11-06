@@ -107,7 +107,7 @@ export default function Message({ message }: { message: UiMessage }) {
         </div>
 
         {message.error && (
-          <p className="rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+          <p className="rounded-lg bg-red-950/50 px-3 py-2 text-xs text-red-300">
             {message.error}
           </p>
         )}
