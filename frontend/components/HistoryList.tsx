@@ -10,6 +10,8 @@
  */
 
 import Button from "@/components/ui/Button";
+import EmptyNote from "@/components/ui/EmptyNote";
+import { FOCUS } from "@/components/ui/tokens";
 import type { ConversationSummary } from "@/lib/api";
 
 type Props = {
@@ -35,7 +37,7 @@ export default function HistoryList({ conversations, activeId, onSelect }: Props
             <button
               type="button"
               onClick={() => onSelect(conversation.conversation_id)}
-              className={`w-full truncate rounded-lg px-2 py-1.5 text-left text-xs transition-colors ${
+              className={`w-full truncate rounded-lg px-2 py-1.5 text-left text-xs transition-colors ${FOCUS} ${
                 conversation.conversation_id === activeId
                   ? "bg-zinc-800 text-zinc-100"
                   : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
@@ -46,9 +48,7 @@ export default function HistoryList({ conversations, activeId, onSelect }: Props
             </button>
           </li>
         ))}
-        {conversations.length === 0 && (
-          <li className="px-2 py-1.5 text-xs text-zinc-600">No conversations yet.</li>
-        )}
+        {conversations.length === 0 && <EmptyNote>No conversations yet.</EmptyNote>}
       </ul>
     </>
   );

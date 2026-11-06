@@ -15,7 +15,9 @@
 import { useState } from "react";
 
 import Button from "@/components/ui/Button";
+import { CloseIcon } from "@/components/ui/icons";
 import StatusPill from "@/components/ui/StatusPill";
+import { FOCUS } from "@/components/ui/tokens";
 import { formatBytes } from "@/lib/format";
 import type { DocumentRecord } from "@/lib/api";
 
@@ -45,7 +47,7 @@ export default function DocumentRow({
             onChange={() => onToggleScope(document.document_id)}
             disabled={!isReady}
             aria-label={`Search ${document.filename}`}
-            className="h-3.5 w-3.5 accent-indigo-500 disabled:opacity-30"
+            className={`h-3.5 w-3.5 accent-indigo-500 disabled:opacity-30 ${FOCUS}`}
           />
         </label>
 
@@ -57,8 +59,9 @@ export default function DocumentRow({
             <StatusPill status={document.status} />
             {isReady && (
               <span>
-                {document.chunk_count} chunks
-                {document.page_count > 0 && ` · ${document.page_count} pages`}
+                {document.chunk_count} {document.chunk_count === 1 ? "chunk" : "chunks"}
+                {document.page_count > 0 &&
+                  ` · ${document.page_count} ${document.page_count === 1 ? "page" : "pages"}`}
               </span>
             )}
             <span>{formatBytes(document.size_bytes)}</span>
@@ -93,7 +96,7 @@ export default function DocumentRow({
             aria-label={`Delete ${document.filename}`}
             className="shrink-0"
           >
-            ✕
+            <CloseIcon />
           </Button>
         )}
       </div>

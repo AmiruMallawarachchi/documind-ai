@@ -28,7 +28,8 @@ import { useState } from "react";
 
 import Banner from "@/components/ui/Banner";
 import Button from "@/components/ui/Button";
-import { FIELD, FIELD_LABEL, HINT } from "@/components/ui/tokens";
+import { EyeIcon, EyeOffIcon } from "@/components/ui/icons";
+import { FIELD, FIELD_LABEL, FOCUS, HINT } from "@/components/ui/tokens";
 import {
   createAccount,
   resendVerification,
@@ -124,7 +125,7 @@ export default function AuthPanel() {
               type="button"
               onClick={() => switchMode(option)}
               aria-pressed={mode === option}
-              className={`flex-1 rounded-lg px-3 py-2 transition-colors ${
+              className={`flex-1 rounded-lg px-3 py-2 transition-colors ${FOCUS} ${
                 mode === option ? "bg-indigo-600 text-white" : "text-zinc-400 hover:text-zinc-200"
               }`}
             >
@@ -178,9 +179,9 @@ export default function AuthPanel() {
                 aria-label={reveal ? "Hide the password" : "Show the password"}
                 aria-pressed={reveal}
                 aria-controls="password"
-                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-zinc-500 transition-colors hover:text-zinc-200 focus:outline-none focus-visible:text-indigo-400"
+                className={`absolute inset-y-0 right-0 flex w-11 items-center justify-center text-zinc-500 transition-colors hover:text-zinc-200 ${FOCUS}`}
               >
-                {reveal ? <EyeOff /> : <Eye />}
+                {reveal ? <EyeOffIcon /> : <EyeIcon />}
               </button>
             </div>
           </div>
@@ -222,26 +223,5 @@ export default function AuthPanel() {
         </p>
       </div>
     </main>
-  );
-}
-
-/** Two strokes, so the icon can be recoloured by the button that owns it and needs no icon library. */
-function Eye() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-
-function EyeOff() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-      <path d="M2 12s3.6-7 10-7c2 0 3.8.6 5.3 1.5" />
-      <path d="M18.6 6.9C20.7 8.5 22 12 22 12s-3.6 7-10 7c-2 0-3.8-.6-5.3-1.5" />
-      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
-      <path d="m3 3 18 18" />
-    </svg>
   );
 }

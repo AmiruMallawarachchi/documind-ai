@@ -19,6 +19,9 @@
  * `primary` is an action and a `ghost` is a correction, and the weight is how you tell them apart at a
  * glance.
  *
+ * Every one of them carries `tokens.FOCUS`, the keyboard ring. Controls that are not `Button` say so at
+ * the call site and take the same token: the ring is a house rule, not a variant.
+ *
  * Not every `<button>` belongs here, and the boundary is deliberate: a control whose size comes from the
  * text around it is not a rectangle with a variant. That leaves the citation chips (`text-[0.7em]`,
  * `align-super`), the source and history rows (full-width, left-aligned, truncating), the mode switch (two
@@ -29,6 +32,7 @@
 import type { ButtonHTMLAttributes } from "react";
 
 import Spinner from "./Spinner";
+import { FOCUS } from "./tokens";
 
 const STYLE = {
   primary: {
@@ -92,6 +96,7 @@ export default function Button({
   const style = STYLE[variant];
   const classes = [
     "inline-flex items-center justify-center gap-2 transition-colors disabled:cursor-not-allowed",
+    FOCUS,
     SIZE[size],
     style.rest,
     busy ? "cursor-not-allowed" : style.idle,

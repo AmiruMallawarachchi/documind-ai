@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import DocumentRow from "@/components/DocumentRow";
+import { FOCUS } from "@/components/ui/tokens";
 import type { DocumentRecord } from "@/lib/api";
 
 /**
@@ -53,6 +54,15 @@ describe("DocumentRow", () => {
     expect(screen.getByText("2.0 MB")).toBeInTheDocument();
   });
 
+  it("counts one chunk in the singular", () => {
+    // The demo corpus is one page and one chunk, so this is the first thing a reviewer of the deployed
+    // app reads — and it read "1 chunks · 1 pages".
+    renderRow(record({ chunk_count: 1, page_count: 1, size_bytes: 172 }));
+
+    expect(screen.getByText("1 chunk · 1 page")).toBeInTheDocument();
+    expect(screen.getByText("172 B")).toBeInTheDocument();
+  });
+
   it("cannot be searched while it is still indexing", () => {
     renderRow(record({ status: "parsing", chunk_count: 0, page_count: 0 }));
 
@@ -60,6 +70,14 @@ describe("DocumentRow", () => {
     expect(screen.getByText("indexing")).toBeInTheDocument();
     // Chunk and page counts describe a finished index, so an unfinished one says nothing about them.
     expect(screen.queryByText(/chunks/)).not.toBeInTheDocument();
+  });
+
+  it("gives the scope checkbox the house keyboard ring", () => {
+    // The row's checkbox is the one control here that is not a `Button`, and it is a native one, so it
+    // would otherwise take the browser's own focus ring. The ring is a house rule, not a variant.
+    renderRow();
+
+    expect(screen.getByRole("checkbox").className).toContain(FOCUS);
   });
 
   it("shows the backend's own reason when the file failed", () => {

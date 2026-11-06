@@ -18,6 +18,7 @@ import { useState } from "react";
 import AgentTrace from "@/components/AgentTrace";
 import SourceList from "@/components/SourceList";
 import Banner from "@/components/ui/Banner";
+import { FOCUS } from "@/components/ui/tokens";
 import { parseAnswer } from "@/lib/citations";
 import type { UiMessage } from "@/lib/use-chat";
 
@@ -57,7 +58,7 @@ export default function Message({ message }: { message: UiMessage }) {
                         key={index}
                         type="button"
                         onClick={() => jump(index)}
-                        className="mx-0.5 rounded bg-indigo-500/15 px-1 align-super text-[0.7em] font-semibold text-indigo-300 transition-colors hover:bg-indigo-500/30"
+                        className={`mx-0.5 rounded bg-indigo-500/15 px-1 align-super text-[0.7em] font-semibold text-indigo-300 transition-colors hover:bg-indigo-500/30 ${FOCUS}`}
                         aria-label={`Go to source ${index}`}
                       >
                         {index}

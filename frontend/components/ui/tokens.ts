@@ -11,9 +11,17 @@
  * Deliberately small: a string used by one component stays in that component.
  */
 
+/**
+ * The keyboard ring, so one answer serves every control. `focus-visible`, not `focus`: a mouse click does
+ * not need to draw a ring around what it just pressed, and a tab stop always does. `outline` rather than
+ * `box-shadow` because it sits outside whatever background the control is on, which on this palette is
+ * sometimes zinc-900 and sometimes zinc-950.
+ */
+export const FOCUS =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400";
+
 /** The box a value is typed into. Shared by `input` and `textarea`, so they cannot drift apart. */
-export const FIELD =
-  "w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60";
+export const FIELD = `w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-indigo-500 ${FOCUS} disabled:cursor-not-allowed disabled:opacity-60`;
 
 /** The small-caps label above a field. */
 export const FIELD_LABEL =
