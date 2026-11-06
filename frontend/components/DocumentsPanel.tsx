@@ -167,7 +167,7 @@ export default function DocumentsPanel({
           return (
             <li
               key={document.document_id}
-              className="-mx-2 rounded-lg px-2 py-2.5 transition-colors hover:bg-zinc-900/60"
+              className="rounded-lg px-2 py-2.5 transition-colors hover:bg-zinc-900/60"
             >
               <div className="flex items-start gap-2">
                 <label className="mt-0.5 shrink-0">
