@@ -104,9 +104,9 @@ Six nodes, four of them the "agents" the project is named for (`app/agents/graph
 
 | Node | File | Job | Failure mode it is built around |
 |---|---|---|---|
-| `router` | `router_agent.py:50` | classify into `search`/`chat`/`unsafe`/`clarify` | a model that answers in an unexpected format — `parse_route` scans for a known word and defaults to `search`, so a brittle parser does not become a crash |
+| `router` | `router_agent.py:100` | classify into `search`/`chat`/`unsafe`/`clarify`, with the scoped filenames in the prompt | a model that answers in an unexpected format — `parse_route` reads the `LABEL:` line and defaults to `search`, so a brittle parser does not become a crash and a reason that merely *mentions* another label cannot overwrite it |
 | `retrieval` | `retrieval_agent.py:23` | embed the question, query Pinecone, stage chunks + citations | zero hits short-circuits to `finalise` with an honest "not found" — two Groq calls are not spent to buy a fluent, unsourced guess |
-| `synthesis` | `synthesis_agent.py:52` | draft the answer from numbered passages | a rate-limited call degrades to a readable "try again" sentence, not a 500 |
+| `synthesis` | `synthesis_agent.py:68` | draft the answer from numbered passages | a rate-limited call degrades to a readable "try again" sentence, not a 500 |
 | `critique` | `critique_agent.py:59` | check every claim in the draft against the passages | unparseable verdicts count as **pass**; failing on garbage would spin the loop and burn quota |
 | `direct` | `synthesis_agent.py:102` | answer a non-document question, refuse an off-scope one | — |
 | `finalise` | `synthesis_agent.py:163` | pick the surviving text, strip the `NOT_FOUND_IN_CONTEXT` sentinel | the sentinel must never reach the UI |

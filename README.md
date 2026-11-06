@@ -193,7 +193,7 @@ a crash at boot beats a 500 buried inside a LangChain call stack mid-request.
 ## Tests
 
 ```bash
-cd backend && pytest -q          # 312 tests, no network, no credentials
+cd backend && pytest -q          # 332 tests, no network, no credentials
 ruff check app tests scripts
 cd ../frontend && npm run lint && npm run build
 ```
@@ -298,7 +298,7 @@ Stated plainly, because a list of limits is the most honest part of a portfolio 
 | 3 · Multi-agent | router → retrieval → synthesis → critique, bounded revision loop | ✅ |
 | 4 · Frontend | Streaming chat UI, citations, upload + document scope, history | ✅ |
 | 5 · Hardening | JWT sessions, rate limiting, retry/backoff, JSON logs, upload validation | ✅ |
-| 6 · Testing | 312 tests: unit, integration, smoke, query-shape assertions | ✅ |
+| 6 · Testing | 332 tests: unit, integration, smoke, query-shape assertions | ✅ |
 | 7 · Deploy + docs | Render + Vercel, this README, `ARCHITECTURE.md` | ✅ live |
 | 8 · Portfolio polish (stretch) | Demo video, write-up for Amiru AI Lab / HuggingFace | ⬜ |
 

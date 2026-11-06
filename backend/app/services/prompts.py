@@ -56,16 +56,29 @@ numbers. If the passages do not support an answer, reply exactly NOT_FOUND_IN_CO
 """
 
 ROUTER_SYSTEM_PROMPT = """\
-You classify a user question about their documents. Reply with EXACTLY one line, no prose:
+You classify a user question about their documents. Reply with EXACTLY two lines, no prose:
 
 SEARCH      - needs the documents to answer (facts, terms, summaries, comparisons between files)
 CHAT        - greeting, small talk, or a question about the assistant itself
 UNSAFE      - asks for something harmful, illegal, or outside document analysis
-CLARIFY     - too vague to search (no discernible subject, or a pronoun with no clear referent)
+CLARIFY     - no subject can be worked out even with the documents listed in the message
 
 Format:
 LABEL: <one of the four>
 REASON: <up to 12 words>
+
+The message names the documents the question is being asked against. A demonstrative - "this", "it",
+"that", "this file", "the document" - refers to them. When one document is in scope, or the question is
+about the set as a whole, it has a clear referent and the label is SEARCH. "What is this document?"
+against a single file is a summary request, not a vague one.
+"""
+
+ROUTER_TEMPLATE = """\
+DOCUMENTS IN SCOPE:
+{scope}
+
+QUESTION:
+{question}
 """
 
 CRITIQUE_SYSTEM_PROMPT = """\
@@ -85,6 +98,16 @@ Reply with EXACTLY:
 VERDICT: PASS or VERDICT: FAIL
 ISSUES: <one short line per problem, or NONE>
 """
+
+
+def router_prompt(*, question: str, scope: str) -> str:
+    """Build the classification prompt.
+
+    The scope travels with the question because a demonstrative is only vague in isolation. "What is this
+    document?" has a complete subject the moment you know there is exactly one document to point at, and
+    the router is the agent that has to know it.
+    """
+    return ROUTER_TEMPLATE.format(scope=scope, question=question)
 
 
 def synthesis_prompt(
