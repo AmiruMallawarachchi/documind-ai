@@ -6,7 +6,6 @@ name: Lockfile rebuild (Linux)
 on:
   workflow_dispatch:
   pull_request:
-    paths: [".github/workflows/lockfile-rebuild.yml"]
 
 jobs:
   rebuild:
@@ -16,6 +15,9 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The lock is rebuilt for the tree that needs it, not for this branch's own package.json.
+          ref: fix/citation-markers-render-whole
 
       - uses: actions/setup-node@v7
         with:
