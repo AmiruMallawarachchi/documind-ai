@@ -292,7 +292,7 @@ Next.js 16 App Router, two routes (`/` and `/verify`), no server rendering of us
 
 ## 8. Testing strategy
 
-`cd backend && pytest` — **295 tests, no network, no credentials.**
+`cd backend && pytest` — **341 tests, no network, no credentials.**
 
 | File | Covers | Why it is separate |
 |---|---|---|
@@ -316,6 +316,12 @@ non-deterministic and costs quota; everything else here is deterministic and fre
 a rule that only a test can hold: `stream_text` must never restart a stream that already showed the user
 words, because the retry appends a second answer mid-sentence — `test_llm_retry.py` caught exactly that
 defect while it was still a docstring promise rather than a behaviour.
+
+The frontend has its own suite: `cd frontend && npm test` — **8 component tests** under vitest and jsdom,
+no browser and no backend. It exists because a broken `[1]` citation marker renders as perfectly readable
+prose with a stray bracket in it. The type check passed, the lint passed, the build passed, and clicking
+through the app still showed a sentence — only a test that asserts what the answer bubble actually says
+catches that class of defect.
 
 ---
 

@@ -71,6 +71,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Tests
+        # jsdom, not a browser and not the backend: the answer-rendering logic a lint pass and a build
+        # are both silent about — see frontend/__tests__.
+        run: npm test
+
       - name: Build
         # NEXT_PUBLIC_API_URL is inlined at build time, so CI builds against the local default. A real
         # deploy sets its own value in Vercel's dashboard; nothing here needs to know it.
