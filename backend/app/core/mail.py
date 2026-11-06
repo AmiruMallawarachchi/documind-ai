@@ -80,7 +80,9 @@ def _send_brevo(*, to: str, subject: str, body: str) -> None:
             "sender": {"name": "DocuMind", "email": settings.brevo_sender},
             "to": [{"email": to}],
             "subject": subject,
-            "plainContent": body,
+            # `textContent`, not `plainContent` — the name SMTP uses is not the name this API takes, and a
+            # body under an unrecognised key leaves `textContent` absent, which Brevo answers with 400.
+            "textContent": body,
         }
     ).encode("utf-8")
     request = urllib.request.Request(

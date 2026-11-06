@@ -214,7 +214,21 @@ def test_a_brevo_send_posts_the_link_to_the_api_over_https(brevo_transport):
     assert call.request.full_url.startswith("https://")
     assert call.request.get_method() == "POST"
     assert payload_of(call)["to"] == [{"email": "you@example.com"}]
-    assert "https://app.example.com/verify?token=abc" in payload_of(call)["plainContent"]
+    assert "https://app.example.com/verify?token=abc" in payload_of(call)["textContent"]
+
+
+def test_the_body_goes_in_the_field_brevo_names(brevo_transport):
+    """`plainContent` is what SMTP calls it and what a plausible reading of the API suggests; `textContent`
+    is what Brevo's schema actually takes. Posting the other name does not fail loudly on the way out — it
+    arrives as a 400 for a missing parameter, which reads like an account problem and sent a whole afternoon
+    into sender verification. So the key is asserted here rather than left to the transport's good manners."""
+    mail.send(to="you@example.com", subject="s", body="the message")
+
+    (call,) = RecordingUrlopen.requests
+    payload = payload_of(call)
+
+    assert payload["textContent"] == "the message"
+    assert "plainContent" not in payload
 
 
 def test_the_brevo_request_authenticates_with_the_key_header(brevo_transport):
