@@ -11,6 +11,10 @@
  * Scope selection is per-question and defaults to "everything indexed". Restricting it is the difference
  * between "what does the loan agreement say" pulling passages from three unrelated files and answering
  * from one.
+ *
+ * The drop target is the whole panel, not a dashed rectangle drawn around a button: the ring only appears
+ * while a file is actually over it, so the affordance shows up when it is true instead of sitting there
+ * permanently claiming the eye.
  */
 
 import { useRef, useState } from "react";
@@ -68,57 +72,57 @@ export default function DocumentsPanel({
   };
 
   return (
-    <div className="flex min-h-0 flex-col gap-3">
-      <div
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragging(true);
+    <div
+      onDragOver={(event) => {
+        event.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragging(false);
+        handleFiles(event.dataTransfer.files);
+      }}
+      className={`flex min-h-0 flex-col gap-3 rounded-xl transition-shadow ${
+        dragging ? "ring-1 ring-indigo-500/70" : ""
+      }`}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept={ACCEPTED}
+        onChange={(event) => {
+          handleFiles(event.target.files);
+          // Reset so re-selecting the same file fires change again.
+          event.target.value = "";
         }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setDragging(false);
-          handleFiles(event.dataTransfer.files);
-        }}
-        className={`rounded-xl border border-dashed p-3 text-center transition-colors ${
-          dragging
-            ? "border-indigo-500 bg-indigo-500/10"
-            : "border-zinc-800 bg-zinc-900/40"
-        }`}
-      >
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          accept={ACCEPTED}
-          onChange={(event) => {
-            handleFiles(event.target.files);
-            // Reset so re-selecting the same file fires change again.
-            event.target.value = "";
-          }}
-          className="hidden"
-          aria-label="Choose files to upload"
-        />
-        <p className="text-xs text-zinc-400">
-          Drop files here, or{" "}
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            disabled={state.uploading}
-            className="font-medium text-indigo-400 underline decoration-indigo-800 hover:text-indigo-300 disabled:opacity-50"
-          >
-            browse
-          </button>
-        </p>
-        <p className="mt-1 text-[0.7rem] text-zinc-600">
-          PDF, DOCX, TXT · up to 10 MB each · {state.uploading ? "uploading…" : "no text layer? it will fail, not guess"}
+        className="hidden"
+        aria-label="Choose files to upload"
+      />
+      <div className="space-y-1.5">
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={state.uploading}
+          aria-busy={state.uploading}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed"
+        >
+          {state.uploading && (
+            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z" />
+            </svg>
+          )}
+          Upload documents
+        </button>
+        <p className="text-[0.7rem] leading-snug text-zinc-600">
+          PDF, DOCX, TXT · up to 10 MB each · drop files anywhere in this panel
         </p>
       </div>
 
       {state.error && (
-        <p className="rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
-          {state.error}
-        </p>
+        <p className="rounded-lg bg-red-950/50 px-3 py-2 text-xs text-red-300">{state.error}</p>
       )}
 
       <div className="flex items-center justify-between text-[0.7rem] text-zinc-500">
@@ -149,14 +153,12 @@ export default function DocumentsPanel({
 
       <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
         {state.loading && (
-          <li className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-zinc-500">
-            Loading your documents…
-          </li>
+          <li className="px-2 py-1.5 text-xs text-zinc-500">Loading your documents…</li>
         )}
 
         {!state.loading && state.documents.length === 0 && (
-          <li className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-zinc-500">
-            Nothing uploaded yet. This session has its own document space, so the list is yours alone.
+          <li className="px-2 py-1.5 text-xs leading-relaxed text-zinc-500">
+            Nothing uploaded yet. This account has its own document space, so the list is yours alone.
           </li>
         )}
 
@@ -165,7 +167,7 @@ export default function DocumentsPanel({
           return (
             <li
               key={document.document_id}
-              className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3"
+              className="-mx-2 rounded-lg px-2 py-2.5 transition-colors hover:bg-zinc-900/60"
             >
               <div className="flex items-start gap-2">
                 <label className="mt-0.5 shrink-0">

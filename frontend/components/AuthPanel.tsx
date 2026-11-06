@@ -100,10 +100,14 @@ export default function AuthPanel() {
   const label = "block text-[0.7rem] font-semibold uppercase tracking-widest text-zinc-500";
   const field =
     "w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none";
-  // A disabled submit keeps its normal colour: the grey variant read as "this control is broken", and the
-  // only thing that is actually true while `busy` is that the request has not come back yet.
-  const button =
-    "flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed";
+  const buttonBase =
+    "flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold";
+  // Two different states, two different looks. Nothing to submit yet: grey, the convention every form has
+  // taught people. Mid-request: still indigo, still the same words, plus a spinner — because grey on a
+  // button that was just pressed reads as "this control broke", when the truth is only "not answered yet".
+  const button = busy
+    ? `${buttonBase} cursor-not-allowed bg-indigo-600 text-white`
+    : `${buttonBase} bg-indigo-600 text-white transition-colors hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed`;
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-zinc-950 px-4 py-10 text-zinc-100">
@@ -211,19 +215,19 @@ export default function AuthPanel() {
         </form>
 
         {error && (
-          <p id="auth-error" role="alert" className="rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+          <p id="auth-error" role="alert" className="rounded-lg bg-red-950/50 px-3 py-2 text-xs text-red-300">
             {error}
           </p>
         )}
 
         {notice && (
-          <p className="rounded-lg border border-indigo-900/60 bg-indigo-950/40 px-3 py-2 text-xs leading-relaxed text-indigo-200">
+          <p className="rounded-lg bg-indigo-950/50 px-3 py-2 text-xs leading-relaxed text-indigo-200">
             {notice}
           </p>
         )}
 
         {unverified && (
-          <div className="space-y-2 rounded-lg border border-amber-900/60 bg-amber-950/30 px-3 py-2.5 text-xs text-amber-200">
+          <div className="space-y-2 rounded-lg bg-amber-950/40 px-3 py-2.5 text-xs text-amber-200">
             <p>
               {unverified} has an account but has not confirmed the address yet, so the password does not
               open it.
@@ -232,7 +236,7 @@ export default function AuthPanel() {
               type="button"
               onClick={resend}
               disabled={busy}
-              className="rounded-lg border border-amber-800 px-2.5 py-1 font-semibold transition-colors hover:border-amber-600 disabled:opacity-60"
+              className="rounded-lg bg-amber-500/15 px-2.5 py-1 font-semibold text-amber-200 transition-colors hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Send the confirmation link again
             </button>
