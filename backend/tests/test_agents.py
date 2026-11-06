@@ -56,12 +56,21 @@ def script(monkeypatch):
 
 
 @pytest.fixture
-def hits(monkeypatch):
+def hits(monkeypatch, fake_metadata):
     """Stub only the retrieval calls that touch the network.
 
     citations_from and build_context_block are left real on purpose: they are pure functions, so faking
     them would test the fake instead of the code, and a signature mismatch would pass happily.
+
+    `fake_metadata` is a dependency rather than an accident. The router reads the scoped filenames to
+    classify a turn, and an unfaked store would make every test in this file wait on a Mongo socket that
+    CI does not have. One document is seeded because half these tests ask about `doc-1`.
     """
+    fake_metadata.create_document_record(
+        document_id="doc-1", owner_id="owner-a", filename="loan.pdf", content_type="application/pdf"
+    )
+    fake_metadata.mark_status("doc-1", "owner-a", "indexed")
+
     found: dict = {"chunks": [], "calls": []}
 
     def fake_retrieve(**kwargs):
@@ -174,7 +183,7 @@ def test_clarify_route_asks_without_searching(script, hits):
 
     assert result["route"] == "clarify"
     assert hits["calls"] == []
-    assert "not sure" in result["answer"].lower()
+    assert "could not work out" in result["answer"].lower()
 
 
 def test_failed_critique_loops_back_through_synthesis_once(script, hits):
@@ -315,3 +324,117 @@ def test_graph_is_compiled_once(script):
     graph.build_graph.cache_clear()
     first = graph.build_graph()
     assert graph.build_graph() is first, "recompiling per request would add latency for no benefit"
+
+
+# ── the router reads the label, not the commentary ────────────────────────────────────────────────
+#
+# `parse_route` used to scan the whole reply for a known word and return whichever the set happened to
+# iterate first. Both halves were wrong: the reason line routinely names a route word it is only talking
+# about, and a set's order comes from hashes, so one reply could route two ways in two processes.
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("LABEL: SEARCH\nREASON: asks about a document term", "search"),
+        ("LABEL: CHAT\nREASON: greeting, no search needed", "chat"),
+        ("LABEL: UNSAFE\nREASON: asks for something illegal", "unsafe"),
+        # The one that was broken: a reason that mentions the wrong label must not become the label.
+        ("LABEL: CHAT\nREASON: the user is searching for a file", "chat"),
+        ("LABEL: CLARIFY\nREASON: pronoun with no referent, cannot search", "clarify"),
+        ("LABEL: SEARCH\nREASON: needs to clarify which clause", "search"),
+        # Format tolerance kept: the label line may be introduced by either word, or by nothing at all.
+        ("Route: UNSAFE - asks for something illegal", "unsafe"),
+        ("SEARCH", "search"),
+        ("I think this is about documents maybe?", "search"),
+        ("", "search"),
+    ],
+)
+def test_parse_route_takes_the_label_it_was_given(raw, expected):
+    assert router_agent.parse_route(raw)[0] == expected
+
+
+def test_parse_route_matches_whole_words_only():
+    """"research" contains "search", and "clarify" was once reachable through a substring match."""
+    assert router_agent.parse_route("LABEL: CHAT\nREASON: about their research project")[0] == "chat"
+
+
+def test_parse_route_picks_by_position_and_not_by_membership():
+    """Two route words in one line: the earlier one wins, whichever way the set iterates.
+
+    The mirror pair is the point. Under the old implementation both of these returned whichever word the
+    set yielded first, so the answer depended on hash order rather than on what the model wrote.
+    """
+    assert router_agent.parse_route("search, or perhaps clarify")[0] == "search"
+    assert router_agent.parse_route("clarify, or perhaps search")[0] == "clarify"
+
+
+def test_parse_route_keeps_the_reason_for_the_trace():
+    route, reason = router_agent.parse_route("LABEL: SEARCH\nREASON: asks about the fee")
+    assert (route, reason) == ("search", "asks about the fee")
+
+
+# ── the router is told what the question refers to ────────────────────────────────────────────────
+
+
+def test_router_prompt_names_the_documents_in_scope(script, hits):
+    """The bug this closes: "what is this document?" against one indexed file was answered as CLARIFY.
+
+    The router had the question and nothing else, so a demonstrative with a perfectly good referent read
+    as vagueness. The scoped filenames have to be in the prompt for the classification to be fair.
+    """
+    llm = script(["LABEL: SEARCH", "It is a loan agreement. [1]", "VERDICT: PASS"])
+
+    graph.build_graph().invoke(base_inputs(question="what is this document ?", document_ids=["doc-1"]))
+
+    router_prompt_text = llm.prompts[0]
+    assert "loan.pdf" in router_prompt_text
+    assert "what is this document ?" in router_prompt_text
+
+
+def test_router_prompt_states_the_scope_when_nothing_is_selected(script, hits):
+    """An empty selection is not an empty corpus: it means the whole collection, and says so."""
+    llm = script(["LABEL: SEARCH", "Answer. [1]", "VERDICT: PASS"])
+
+    graph.build_graph().invoke(base_inputs(document_ids=[]))
+
+    prompt = llm.prompts[0].lower()
+    assert "every document this user has indexed is in scope" in prompt
+    assert "no documents" not in prompt, "an unselected scope must not read as an empty account"
+
+
+@pytest.mark.parametrize(("count", "expect_named"), [(1, True), (3, True), (6, True), (9, False)])
+def test_describe_scope_lists_names_up_to_a_limit(fake_metadata, count, expect_named):
+    """The bound is asserted at the boundary and one past it, and the number is written out here rather
+    than imported: pinning it is the point, and reading it from the module would let it drift unnoticed."""
+    limit = 6
+    ids = []
+    for index in range(count):
+        document_id = f"scope-{index}"
+        ids.append(document_id)
+        fake_metadata.create_document_record(
+            document_id=document_id,
+            owner_id="owner-a",
+            filename=f"file-{index}.pdf",
+            content_type="application/pdf",
+        )
+
+    text = router_agent.describe_scope("owner-a", ids)
+
+    assert "file-0.pdf" in text
+    assert (f"file-{count - 1}.pdf" in text) is expect_named
+    if count > limit:
+        assert f"{count} documents:" in text
+        assert f"{count - limit} more" in text
+    else:
+        assert f"{count} document" in text
+
+
+def test_clarify_reply_shows_the_users_own_files(script, hits):
+    """Naming the files beats advising the user to name one, and beats an example they may not have."""
+    script(["LABEL: CLARIFY"])
+
+    result = graph.build_graph().invoke(base_inputs(question="and that?", document_ids=["doc-1"]))
+
+    assert "loan.pdf" in result["answer"]
+    assert "loan agreement" not in result["answer"], "the reply must not invent a document to ask about"

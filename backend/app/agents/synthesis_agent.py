@@ -19,6 +19,7 @@ import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.agents.router_agent import describe_scope
 from app.agents.state import MAX_REVISIONS, AgentState
 from app.models.document import RetrievedChunk
 from app.services import prompts, retrieval
@@ -35,6 +36,21 @@ UNSAFE_REPLY = (
     "That request is outside what this assistant does. It reads and answers questions about documents "
     "you upload, and nothing else."
 )
+
+
+def _clarify_reply(state: AgentState) -> str:
+    """Ask which document the user means, and show them the list they are choosing from.
+
+    The scope is printed rather than described: "name the file" is useless advice to someone who cannot
+    see the filenames from where they are typing, and a made-up example ("try the loan agreement") teaches
+    them to ask about a document they may not have.
+    """
+    scope = describe_scope(state["owner_id"], list(state.get("document_ids") or []))
+    return (
+        "I could not work out what to look for, so I did not want to guess. These are in scope:\n\n"
+        + scope
+        + "\n\nAsk about one of them by name or by topic - a clause, a figure, a page - and I will read it."
+    )
 
 
 def _context_block(state: AgentState) -> str:
@@ -112,13 +128,7 @@ def reply_without_search(state: AgentState) -> dict:
         return {"answer": UNSAFE_REPLY, "trace": ["direct:unsafe"]}
 
     if route == "clarify":
-        return {
-            "answer": (
-                "I am not sure which part of your documents you mean. Try naming the file or the topic - "
-                "for example, 'what is the late fee in the loan agreement?'"
-            ),
-            "trace": ["direct:clarify"],
-        }
+        return {"answer": _clarify_reply(state), "trace": ["direct:clarify"]}
 
     try:
         reply = complete_text(

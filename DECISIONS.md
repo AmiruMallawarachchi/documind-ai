@@ -16,6 +16,8 @@ what was given up.
 | `trace` is `Annotated[list, operator.add]` | LangGraph's default channel overwrites, so every node would erase the history and the UI would show only "finalise" | One non-obvious annotation to explain |
 | Chunks travel through state as plain dicts, not pydantic models | LangGraph merges state by key; swapping a model instance for a dict mid-chain is a subtle bug class, so the conversion happens once at the prompt boundary | Two representations of the same thing, deliberately |
 | Compiled graph cached with `lru_cache(maxsize=1)` | A per-request compile rebuilds the node registry for no benefit, and the free tier's 0.1 CPU makes that measurable | No per-request graph variation (not needed) |
+| The router prompt carries the scoped filenames, not just the question | "what is this document?" against one selected file is an unambiguous summary request, and a classifier that cannot see the referent reads a demonstrative as vagueness and refuses to answer. Real users hit this in the first minute | One small Mongo read per turn (`filenames_for` on ids already resolved by `POST /api/chat`), and a router that must be told rather than inferred |
+| `parse_route` reads the `LABEL:` line and matches whole words, earliest first | Scanning the whole reply let a reason overwrite its own label — "LABEL: CLARIFY / REASON: user wants to search" routed as a search — and iterating a `set` of the four words made the winner depend on hash order, so one reply could route two ways in two processes | A format assumption (`LABEL:`/`Route:`) that a model could ignore; the whole-reply scan stays as the fallback |
 
 ## Retrieval and grounding
 
