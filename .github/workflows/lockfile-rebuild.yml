@@ -5,6 +5,8 @@ name: Lockfile rebuild (Linux)
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths: [".github/workflows/lockfile-rebuild.yml"]
 
 jobs:
   rebuild:
