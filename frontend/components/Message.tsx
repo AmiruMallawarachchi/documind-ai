@@ -33,14 +33,19 @@ function traceLabel(step: string): string {
   return detail ? `${friendly} ${detail}` : friendly;
 }
 
+/** A run of adjacent markers, the only split piece that should become buttons instead of prose. */
+const MARKER_RUN = /^(?:\[\d+\])+$/;
+
 /** Split the answer on [n] markers and turn each into a button that scrolls to its citation. */
 function withCitations(content: string, onJump: (index: number) => void) {
-  const parts = content.split(/(\[\d+(?:\]\[\d+)*)\]/g);
+  // The repeating group has to contain the closing `]`. Split hands back exactly what it matched, so a
+  // group that stops at the digits returns `[1`, which no full-marker test recognises: the citation
+  // renders as broken text and its `]` disappears with the split.
+  const parts = content.split(/((?:\[\d+\])+)/g);
   return parts.map((part, position) => {
-    const match = /^\[(\d+(?:\]\[\d+)*)\]$/.exec(part);
-    if (!match) return <span key={position}>{part}</span>;
+    if (!MARKER_RUN.test(part)) return <span key={position}>{part}</span>;
 
-    const indexes = match[1].split("]").map((value) => Number.parseInt(value, 10));
+    const indexes = [...part.matchAll(/\d+/g)].map(([digits]) => Number(digits));
     return (
       <span key={position} className="whitespace-nowrap">
         {indexes.map((index) => (
