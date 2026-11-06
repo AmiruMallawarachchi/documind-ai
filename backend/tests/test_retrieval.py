@@ -75,11 +75,15 @@ def test_a_blank_question_returns_no_evidence_without_calling_the_embedder(monke
 
 
 def test_the_owner_scope_reaches_the_vector_query(monkeypatch):
-    """The leak test that matters: owner_id travels into the store call, not just into the log line."""
-    seen = {}
+    """The leak test that matters: owner_id travels into the store call, not just into the log line.
+
+    Every call is recorded rather than the last one, because a narrow empty scope now makes a second,
+    unfiltered attempt — and an owner filter silently missing from *that* one would be the leak.
+    """
+    calls: list[dict] = []
 
     def fake_query_similar(**kwargs):
-        seen.update(kwargs)
+        calls.append(kwargs)
         return []
 
     monkeypatch.setattr(retrieval, "query_similar", fake_query_similar)
@@ -87,10 +91,12 @@ def test_the_owner_scope_reaches_the_vector_query(monkeypatch):
 
     retrieval.retrieve(owner_id="owner-a", question="fee?", document_ids=["doc-1"], top_k=3)
 
-    assert seen["owner_id"] == "owner-a"
-    assert seen["document_ids"] == ["doc-1"]
-    assert seen["top_k"] == 3
-    assert seen["score_threshold"] == retrieval.DEFAULT_SCORE_FLOOR
+    assert calls, "the store was never asked"
+    for call in calls:
+        assert call["owner_id"] == "owner-a"
+        assert call["document_ids"] == ["doc-1"]
+        assert call["top_k"] == 3
+    assert calls[0]["score_threshold"] == retrieval.DEFAULT_SCORE_FLOOR
 
 
 def test_retrieved_duplicates_are_collapsed_before_the_prompt_sees_them(monkeypatch):
@@ -108,6 +114,128 @@ def test_retrieved_duplicates_are_collapsed_before_the_prompt_sees_them(monkeypa
     results = retrieval.retrieve(owner_id="owner-a", question="fee?")
 
     assert [c.chunk_id for c in results] == ["a", "c"]
+
+
+# ── the overview fallback ─────────────────────────────────────────────────────
+#
+# "What is this document?" asks about a file as a whole, so it shares no vocabulary with any passage
+# inside it. Measured against the very document it names, cosine sits at 0.08 and the floor calls that
+# noise — which routes the question to the honest-looking "I could not find anything" instead of a
+# summary. These tests hold the narrow-scope exception and, just as importantly, its boundary.
+
+
+def _store(*matches):
+    """A vector-store stub that applies the threshold it is handed, the way `query_similar` does.
+
+    Faithful on this one point because it is the whole subject: a fake that ignored `score_threshold`
+    would make every fallback test below pass for the wrong reason, and the ordering of the retry would
+    never be exercised. Records the threshold of each call.
+    """
+    calls: list = []
+
+    def fake(**kwargs):
+        floor = kwargs["score_threshold"]
+        calls.append(floor)
+        return [match for match in matches if floor is None or match.score >= floor]
+
+    return fake, calls
+
+
+# Two passages from the middle of a file, both scoring the way a whole-document question does.
+_OVERVIEW_MATCHES = (
+    chunk(chunk_id="a", text="Q3 Vendor Agreement. Late fee: 2.5 percent.", score=0.08),
+    chunk(chunk_id="b", text="Termination requires thirty days notice.", score=0.05),
+)
+
+
+def test_a_whole_document_question_falls_back_to_unfiltered_ranking(monkeypatch):
+    fake, calls = _store(*_OVERVIEW_MATCHES)
+    monkeypatch.setattr(retrieval, "embed_query", lambda text: [0.0])
+    monkeypatch.setattr(retrieval, "query_similar", fake)
+
+    results = retrieval.retrieve(
+        owner_id="owner-a", question="what is this document ?", document_ids=["doc-1"]
+    )
+
+    assert calls == [retrieval.DEFAULT_SCORE_FLOOR, None], "the retry should drop the floor, not raise it"
+    assert [c.chunk_id for c in results] == ["a", "b"]
+
+
+def test_a_search_with_hits_does_not_spend_the_second_query(monkeypatch):
+    """The floor still decides the normal case; the retry only happens when it produced nothing."""
+    fake, calls = _store(chunk(chunk_id="a", text="The late fee is 250 dollars.", score=0.56))
+    monkeypatch.setattr(retrieval, "embed_query", lambda text: [0.0])
+    monkeypatch.setattr(retrieval, "query_similar", fake)
+
+    results = retrieval.retrieve(owner_id="owner-a", question="what is the late fee?", document_ids=["doc-1"])
+
+    assert calls == [retrieval.DEFAULT_SCORE_FLOOR], "a search that landed must not re-query"
+    assert [c.chunk_id for c in results] == ["a"]
+
+
+@pytest.mark.parametrize("scope", [["doc-1"], ["doc-1", "doc-2"], ["doc-1", "doc-2", "doc-3"]])
+def test_a_narrow_scope_gets_the_fallback(monkeypatch, scope):
+    fake, calls = _store(*_OVERVIEW_MATCHES)
+    monkeypatch.setattr(retrieval, "embed_query", lambda text: [0.0])
+    monkeypatch.setattr(retrieval, "query_similar", fake)
+
+    assert retrieval.retrieve(owner_id="owner-a", question="summarise it", document_ids=scope)
+
+    assert len(calls) == 2
+
+
+def test_a_wide_scope_does_not_get_the_fallback(monkeypatch):
+    """With a library in scope, zero hits really does mean "not in your documents".
+
+    Lowering the floor here would paste the nearest few hundred chunks into the prompt and buy a fluent
+    answer sourced from irrelevant text, which is the failure the floor exists to prevent.
+    """
+    fake, calls = _store(*_OVERVIEW_MATCHES)
+    monkeypatch.setattr(retrieval, "embed_query", lambda text: [0.0])
+    monkeypatch.setattr(retrieval, "query_similar", fake)
+
+    scope = [f"doc-{index}" for index in range(retrieval._OVERVIEW_SCOPE_MAX_DOCUMENTS + 1)]
+    results = retrieval.retrieve(owner_id="owner-a", question="summarise everything", document_ids=scope)
+
+    assert calls == [retrieval.DEFAULT_SCORE_FLOOR], "a wide scope must not re-query without the floor"
+    assert results == []
+
+
+def test_an_unscoped_search_does_not_get_the_fallback(monkeypatch):
+    """`document_ids=None` means the whole corpus, so the narrow-scope rule cannot apply to it."""
+    fake, calls = _store(*_OVERVIEW_MATCHES)
+    monkeypatch.setattr(retrieval, "embed_query", lambda text: [0.0])
+    monkeypatch.setattr(retrieval, "query_similar", fake)
+
+    assert retrieval.retrieve(owner_id="owner-a", question="what is this document ?") == []
+    assert calls == [retrieval.DEFAULT_SCORE_FLOOR]
+
+
+def test_the_fallback_invents_nothing_when_the_scope_is_empty(monkeypatch):
+    """A scope with no vectors is empty twice over; the retry must not manufacture evidence."""
+    fake, calls = _store()
+    monkeypatch.setattr(retrieval, "embed_query", lambda text: [0.0])
+    monkeypatch.setattr(retrieval, "query_similar", fake)
+
+    results = retrieval.retrieve(owner_id="owner-a", question="what is this document ?", document_ids=["doc-1"])
+
+    assert results == []
+    assert len(calls) == 2, "the retry still ran, and found what the first query found: nothing"
+
+
+def test_the_fallback_collapses_duplicates_like_the_first_query(monkeypatch):
+    """The retry is not a second-class path: overlap seeding is still deduplicated before the prompt."""
+    fake, _ = _store(
+        _OVERVIEW_MATCHES[0],
+        chunk(chunk_id="dup", text="Q3 Vendor Agreement. Late fee: 2.5 percent.", score=0.07),
+        _OVERVIEW_MATCHES[1],
+    )
+    monkeypatch.setattr(retrieval, "embed_query", lambda text: [0.0])
+    monkeypatch.setattr(retrieval, "query_similar", fake)
+
+    results = retrieval.retrieve(owner_id="owner-a", question="what is this document ?", document_ids=["doc-1"])
+
+    assert [c.chunk_id for c in results] == ["a", "b"]
 
 
 # ── context block and citations ────────────────────────────────────────────────
