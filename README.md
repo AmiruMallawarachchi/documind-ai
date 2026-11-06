@@ -195,7 +195,7 @@ a crash at boot beats a 500 buried inside a LangChain call stack mid-request.
 ```bash
 cd backend && pytest -q          # 341 tests, no network, no credentials
 ruff check app tests scripts
-cd ../frontend && npm test       # 8 component tests in jsdom, no browser, no backend
+cd ../frontend && npm test       # 19 component tests in jsdom, no browser, no backend
 npm run lint && npm run build
 ```
 

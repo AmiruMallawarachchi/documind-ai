@@ -12,9 +12,10 @@
  * letting them fix the one field that was actually wrong. The eye button changes only how the field is
  * rendered, never what is in it, and it is a `type="button"` so revealing cannot submit the form.
  *
- * While a request is in flight the submit button keeps its normal colour and gains a spinner. Grey text on
- * an indigo button reads as "this control is disabled because something is wrong"; the something that is
- * actually true is that the server has not answered yet.
+ * While a request is in flight the submit button keeps its normal colour and gains a spinner. That rule
+ * lives in `ui/Button`'s `busy` prop, and it is here because this is the panel that taught it to me: grey
+ * text on an indigo button reads as "this control is disabled because something is wrong", and the
+ * something that is actually true is that the server has not answered yet.
  *
  * What the backend refuses to say shapes what this can say. Sign-up answers one sentence whether or not the
  * address already exists, so there is no "that email is taken" branch to draw, and a failed sign-in answers
@@ -25,6 +26,9 @@
 
 import { useState } from "react";
 
+import Banner from "@/components/ui/Banner";
+import Button from "@/components/ui/Button";
+import { FIELD, FIELD_LABEL, HINT } from "@/components/ui/tokens";
 import {
   createAccount,
   resendVerification,
@@ -97,18 +101,6 @@ export default function AuthPanel() {
     setBusy(false);
   };
 
-  const label = "block text-[0.7rem] font-semibold uppercase tracking-widest text-zinc-500";
-  const field =
-    "w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none";
-  const buttonBase =
-    "flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold";
-  // Two different states, two different looks. Nothing to submit yet: grey, the convention every form has
-  // taught people. Mid-request: still indigo, still the same words, plus a spinner — because grey on a
-  // button that was just pressed reads as "this control broke", when the truth is only "not answered yet".
-  const button = busy
-    ? `${buttonBase} cursor-not-allowed bg-indigo-600 text-white`
-    : `${buttonBase} bg-indigo-600 text-white transition-colors hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed`;
-
   return (
     <main className="flex min-h-dvh items-center justify-center bg-zinc-950 px-4 py-10 text-zinc-100">
       <div className="w-full max-w-sm space-y-6">
@@ -143,7 +135,7 @@ export default function AuthPanel() {
 
         <form onSubmit={submit} className="space-y-3">
           <div className="space-y-1.5">
-            <label htmlFor="email" className={label}>
+            <label htmlFor="email" className={FIELD_LABEL}>
               Email
             </label>
             <input
@@ -156,12 +148,12 @@ export default function AuthPanel() {
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? "auth-error" : undefined}
               placeholder="you@example.com"
-              className={field}
+              className={FIELD}
             />
           </div>
 
           <div className="space-y-1.5">
-            <label htmlFor="password" className={label}>
+            <label htmlFor="password" className={FIELD_LABEL}>
               Password
             </label>
             <div className="relative">
@@ -178,7 +170,7 @@ export default function AuthPanel() {
                 aria-invalid={error ? true : undefined}
                 aria-describedby={error ? "auth-error" : undefined}
                 placeholder={mode === "signin" ? "Your password" : "At least 12 characters"}
-                className={`${field} pr-11`}
+                className={`${FIELD} pr-11`}
               />
               <button
                 type="button"
@@ -193,57 +185,37 @@ export default function AuthPanel() {
             </div>
           </div>
 
-          <button
+          <Button
             type="submit"
+            block
+            busy={busy}
             disabled={busy || email.trim().length === 0 || password.length === 0}
-            aria-busy={busy}
-            className={button}
           >
-            {busy && (
-              <svg
-                className="h-4 w-4 animate-spin"
-                viewBox="0 0 24 24"
-                fill="none"
-                aria-hidden
-              >
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z" />
-              </svg>
-            )}
             {mode === "signin" ? "Open workspace" : "Create account and send the link"}
-          </button>
+          </Button>
         </form>
 
         {error && (
-          <p id="auth-error" role="alert" className="rounded-lg bg-red-950/50 px-3 py-2 text-xs text-red-300">
+          <Banner id="auth-error" role="alert">
             {error}
-          </p>
+          </Banner>
         )}
 
-        {notice && (
-          <p className="rounded-lg bg-indigo-950/50 px-3 py-2 text-xs leading-relaxed text-indigo-200">
-            {notice}
-          </p>
-        )}
+        {notice && <Banner tone="info">{notice}</Banner>}
 
         {unverified && (
-          <div className="space-y-2 rounded-lg bg-amber-950/40 px-3 py-2.5 text-xs text-amber-200">
+          <Banner tone="warning" className="space-y-2">
             <p>
               {unverified} has an account but has not confirmed the address yet, so the password does not
               open it.
             </p>
-            <button
-              type="button"
-              onClick={resend}
-              disabled={busy}
-              className="rounded-lg bg-amber-500/15 px-2.5 py-1 font-semibold text-amber-200 transition-colors hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-60"
-            >
+            <Button variant="warning" size="xs" onClick={resend} disabled={busy}>
               Send the confirmation link again
-            </button>
-          </div>
+            </Button>
+          </Banner>
         )}
 
-        <p className="text-[0.7rem] leading-relaxed text-zinc-600">
+        <p className={HINT}>
           {mode === "signup"
             ? "Confirmation links work once and stay valid for a day. Your documents and conversations belong to your address, not to this browser, so signing in somewhere else finds them."
             : "Your session token lasts a day; sign in again after that. If this is the first visit in a while, the demo server may take a minute and a half to wake up."}
