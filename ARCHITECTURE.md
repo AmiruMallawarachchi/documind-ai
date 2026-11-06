@@ -185,28 +185,40 @@ than a question with no reply.
 The frontend is untrusted; the browser is not a security boundary. Everything below is enforced server
 side.
 
-**Identity.** Until real accounts exist, a visitor types one `DEMO_ACCESS_CODE` and gets a signed HS256
-token (`core/security.py`) whose `sub` is the owner id, with `exp`. The frontend stores it in
-`localStorage` and sends `Authorization: Bearer …` on every call (`frontend/lib/session.ts`).
+**Identity.** A visitor signs up with an email and a password, clicks the confirmation link, and gets a
+signed HS256 token (`core/security.py`) whose `sub` is their account id — which *is* the owner id every
+Mongo and Pinecone filter already keys on. The frontend stores it in `localStorage` and sends
+`Authorization: Bearer …` on every call (`frontend/lib/session.ts`).
 
-- The code compare is `hmac.compare_digest`, not `==` — a timing side channel on a six-character demo
-  code is small, and making it a non-question costs one line.
+- Passwords are Argon2id at `m=19456,t=2,p=1`: OWASP's memory-hard floor, and the ceiling is the 512 MB
+  Render free instance the code runs on. bcrypt would let an attacker amortise a GPU across a leaked table.
+- Two token kinds share one signing key and are told apart by a `purpose` claim. A verification link
+  travels over the least controlled channel here — forwarded, archived by webmail proxies, pasted into
+  chat — so it must not also be a credential: `owner_from_authorization` refuses any token carrying a
+  purpose, and `/auth/verify` refuses one without it.
+- The endpoints say as little as possible about who holds an account. Register and resend answer one
+  identical `202` whichever branch they took; an unknown address and a wrong password are one identical
+  `401`; and the unknown branch still spends a real Argon2 verification (`blind_verify`) so response time
+  is not an enumeration oracle either. The single deliberate exception is the `403` "confirm your email
+  first", which reveals an account that cannot do anything yet.
+- The README publishes one shared, pre-confirmed account so a reviewer needs no inbox. It is an ordinary
+  namespace with ordinary limits, and whatever is uploaded through it is public by design.
 - `JWT_SECRET` is refused at boot when shorter than 32 characters (RFC 7518 for HS256; PyJWT warns on
   every call otherwise).
 - In production (`ENVIRONMENT=production`) a request with no valid token is rejected outright; the
-  `X-Demo-Key` fallback exists only outside production. **That fallback is a demo convenience, not an
+  `X-Demo-Key` fallback exists only outside production. **That fallback is a local-work convenience, not an
   identity system** — a browser-generated key is trivially reset, so namespaces are not a defence
   against a determined visitor, only against accidents.
-- The access code is published in the README so reviewers can use the demo. It is the price of entry,
-  not a secret.
 
 **Scoping.** `owner_id` is part of every Mongo filter (`tests/test_metadata_store.py` asserts the query
 shape for each one) and every Pinecone filter. Conversation ids are ObjectIds — sequential and guessable
 — so an unscoped `find_one` would hand over another user's full chat history from a URL parameter alone.
 
 **Rate limiting.** A dependency-free sliding window (`core/rate_limit.py`): 10 chat / 6 upload per owner
-per minute, 5 logins per client address. Chosen over `slowapi` because the rule is three lines and one
-deque, and it protects *everyone's* shared Groq quota from one runaway client. Rejected requests carry
+per minute, 5 sign-in attempts per client address per minute, and 8 account-creation attempts per address
+per *hour* — the minute-long buckets protect CPU, that one protects a 512 MB Atlas cluster and a personal
+mailbox. Chosen over `slowapi` because the rule is three lines and one deque, and it protects
+*everyone's* shared Groq quota from one runaway client. Rejected requests carry
 `Retry-After`, which the UI shows verbatim. The honest limit: state is per process, so a second Render
 instance doubles the allowance — see §8.
 
@@ -253,18 +265,25 @@ key from an unverified sender.
 
 ## 7. Frontend
 
-Next.js 16 App Router, one route, no server rendering of user data.
+Next.js 16 App Router, two routes (`/` and `/verify`), no server rendering of user data.
 
 - `app/page.tsx` is two components: `Home` owns the session (`useSyncExternalStore` over
   `localStorage`, with a `SESSION_PENDING` server snapshot so there is no hydration flash and no
   `setState` in an effect), and `Workspace` is the actual app, keyed on `ownerId` so switching owners
   cannot leave the previous corpus on screen.
-- `lib/api.ts` is the only file that talks HTTP: auth headers, error unwrapping, and manual SSE
-  decoding live there once rather than per component. `EventSource` is unusable because it only issues
+- `components/AuthPanel.tsx` is one form in two modes — sign in, create account — because both ask for the
+  same two fields. The plaintext password exists only in component state and is never written to storage;
+  the email is, because prefilling it is what makes "sign in again tomorrow" one keystroke and it is not a
+  credential. `/verify` is the one page that reads the query string, so it renders inside a `<Suspense>`
+  boundary and strips the token from the URL once spent.
+- `lib/api.ts` is the only file that talks to the document API: auth headers, error unwrapping, and manual
+  SSE decoding live there once rather than per component. `lib/session.ts` posts to `/api/auth/*` itself,
+  because a sign-in has no token to attach yet and its failures are answers rather than errors.
+  `EventSource` is unusable because it only issues
   GET and the question must travel in a body, so the body stream is read and split on the blank line
   that terminates a frame — frames can straddle network chunks, hence the buffer.
 - A 401 anywhere triggers `handleUnauthorized()`, which clears the session and returns the visitor to
-  the access gate rather than showing a stack of failing requests.
+  the sign-in panel rather than showing a stack of failing requests.
 - `cacheComponents: true` with Partial Prefetching; there is no `getServerSideProps`, no `runtime`
   export, and `NEXT_PUBLIC_API_URL` is read as an inline `process.env` member expression because Next
   only inlines literal member expressions into the client bundle.
@@ -273,7 +292,7 @@ Next.js 16 App Router, one route, no server rendering of user data.
 
 ## 8. Testing strategy
 
-`cd backend && pytest` — **203 tests, no network, no credentials.**
+`cd backend && pytest` — **295 tests, no network, no credentials.**
 
 | File | Covers | Why it is separate |
 |---|---|---|
@@ -285,6 +304,12 @@ Next.js 16 App Router, one route, no server rendering of user data.
 | `test_agents.py` | the graph: routing, the revision cycle, zero-hit short-circuit | one integration test per edge |
 | `test_api.py` | HTTP contract, SSE frames, uploads, conversations | 2–3 smoke paths, mocked LLM |
 | `test_auth.py` | tokens, owner isolation, rate limits, request ids | production mode flipped per test |
+| `test_password.py` | the policy, `blind_verify`, the rehash predicate | those rules live in the hashing module, so they are tested there and not through a route |
+| `test_user_store.py` | row shape, normalisation, the unique email index | a duplicate signup is only visible as an index violation |
+| `test_accounts.py` | signup, verification, sign-in — and what each reveals to an attacker | the no-enumeration promises are observable only over HTTP |
+| `test_mail.py` | the SMTP handshake, and the validator that refuses `smtp` without credentials | a captured message proves nothing about a real relay |
+| `test_seed_demo_user.py` | the shared demo account, including that it never echoes the password | this script writes to production Atlas |
+| `test_logging.py` | JSON lines, `request_id` propagation, health excluded | the log is an interface a reviewer reads |
 
 The rule that keeps this suite worth running in CI: **mock the LLM, never the pipeline.** LLM output is
 non-deterministic and costs quota; everything else here is deterministic and free to test. One example of
@@ -304,6 +329,9 @@ Not omissions — decisions, each with a cost attached.
 - **Verification before streaming** costs first-token latency for every answer.
 - **Rate limiting is per process.** Render's free tier runs one instance, so this is currently true
   globally; a second instance would make each worker count separately.
+- **Accounts, not identity infrastructure.** There is a password and a confirmed address; there is no
+  forgotten-password flow, no second factor, and no way to change an email. A locked-out visitor registers
+  again, which is the right scope for a demo and the wrong one for anything holding real documents.
 - **One compiled graph, cached at module level** (`lru_cache(maxsize=1)`): a per-request compile would
   add measurable latency for no benefit, and it means graph state is never shared between requests.
 - **No queues, no websockets, no horizontal scaling, no per-user billing.** Each would be the right
@@ -319,7 +347,7 @@ Not omissions — decisions, each with a cost attached.
 | Change the embedding model | `EMBEDDING_MODEL_NAME` + `EMBEDDING_DIMENSION` | recreate the Pinecone index — mixing models silently destroys retrieval, and `embedding_service` raises at load if the dims disagree with config |
 | Change chunk size/overlap | config only | re-embed existing documents; old vectors keep the old shape |
 | Add a field to an answer | `models/chat.py` + `frontend/lib/api.ts` | the SSE frame contract is the API's public surface; both ends read it |
-| Require real accounts | `core/deps.py` + `frontend/lib/session.ts` | those two files are the whole seam; nothing else knows how identity arrives |
+| Change how identity arrives | `core/deps.py` + `core/security.py` + `frontend/lib/session.ts` | every router reads `owner_id` from the one dependency, so a new credential only has to produce that; the `purpose` claim is what keeps a mail link out of the API |
 
 ---
 

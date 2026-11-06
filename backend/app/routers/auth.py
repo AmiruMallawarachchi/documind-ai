@@ -1,15 +1,11 @@
 """
 routers/auth.py — Who may open a session, and how they prove an address is theirs.
 
-Two flows live here while the frontend is migrated. `/auth/session` exchanges the published demo access
-code for a token and is what the deployed UI calls today; the four account endpoints below are what
-replaces it. `/auth/session` gets removed once nothing calls it, not before.
-
 Everything a caller does after this module is authorised by the signed token minted here (see
 core/deps.py), so the shape of `SessionResponse` is the contract: an account's `user_id` becomes the
 `owner_id` that every Mongo filter and Pinecone namespace already keys on.
 
-Three rules the account endpoints share:
+Three rules the four endpoints share:
 
   - Same answer for every outcome that could reveal an account. Register returns 202 whether the address
     was new or already taken, and login answers 401 "wrong email or password" whether the address is
@@ -33,11 +29,8 @@ from app.core.config import settings
 from app.core.deps import login_rate_limit, signup_rate_limit
 from app.core.security import (
     AuthenticationError,
-    access_code_matches,
     mint_session,
     mint_verification,
-    new_device_key,
-    normalise_owner_id,
     user_id_from_verification,
 )
 from app.models.auth import (
@@ -45,7 +38,6 @@ from app.models.auth import (
     LoginRequest,
     RegisterRequest,
     ResendRequest,
-    SessionRequest,
     SessionResponse,
     VerifyRequest,
     VerifyResponse,
@@ -74,33 +66,6 @@ def _send_link(record: dict) -> None:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="We could not send the confirmation email. Try again in a moment.",
         ) from exc
-
-
-@router.post("/auth/session", response_model=SessionResponse, tags=["auth"])
-async def open_session(payload: SessionRequest, _: None = Depends(login_rate_limit)) -> SessionResponse:
-    """Open a 24-hour session from the demo access code. Superseded by /auth/login."""
-    if not access_code_matches(payload.access_code):
-        logger.warning("session refused: bad access code")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="That access code is not valid for this demo.",
-        )
-
-    if payload.device_key:
-        try:
-            owner_id = normalise_owner_id(payload.device_key)
-        except AuthenticationError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    else:
-        owner_id = new_device_key()
-
-    token, expires_at = mint_session(owner_id)
-    logger.info("session issued owner_id=%s expires_at=%s", owner_id, expires_at.isoformat())
-    return SessionResponse(
-        access_token=token,
-        owner_id=owner_id,
-        expires_at=expires_at.isoformat(),
-    )
 
 
 @router.post("/auth/register", response_model=AcceptedResponse, status_code=202, tags=["auth"])

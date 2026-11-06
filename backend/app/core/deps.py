@@ -25,10 +25,11 @@ async def current_owner_id(
 ) -> str:
     """Resolve the requesting user's owner id.
 
-    Production traffic authenticates with a session JWT from POST /api/auth/session, and the owner id is
-    read from its signed `sub` claim — a client cannot claim someone else's namespace without forging the
-    signature. The `X-Demo-Key` header still works outside production so that local runs, tests, and the
-    offline server can stand up two namespaces and prove isolation without signing tokens by hand.
+    Production traffic authenticates with a session JWT from POST /api/auth/login, and the owner id is read
+    from its signed `sub` claim — a client cannot claim someone else's namespace without forging the
+    signature and knowing the account's password. The `X-Demo-Key` header still works outside production so
+    that local runs, tests, and the offline server can stand up two namespaces and prove isolation without
+    signing tokens by hand.
 
     Keeping that fallback gated on the environment matters: the query-level `owner_id` filter in Pinecone
     and Mongo is only as good as the identity behind it, and a deployed instance must never accept an
@@ -45,7 +46,7 @@ async def current_owner_id(
     if settings.is_production:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Send 'Authorization: Bearer <session token>'; get one from POST /api/auth/session.",
+            detail="Send 'Authorization: Bearer <session token>'; get one from POST /api/auth/login.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

@@ -43,11 +43,22 @@ A live badge, reading the `status` field straight out of `/api/health`:
 (A `shields.io/endpoint` badge would need the endpoint to return `{"schemaVersion":1,…}`, which
 `/api/health` deliberately does not: its shape is the app's own, not a badge vendor's.)
 
-**Access:** the app opens with a single field. Type the access code and the backend mints a session
-token scoped to your own document namespace, so every later read and search is filtered to what you
-uploaded. The live code is set as `DEMO_ACCESS_CODE` on Render and is deliberately not in this repo:
-it is the only thing standing between a stranger's browser and the project's free-tier Groq quota.
-Locally, the code is `offline-demo`.
+**Access:** the app opens with a sign-in form. Create an account, click the confirmation link in the mail,
+and the backend mints a session token scoped to your own document namespace, so every later read and search
+is filtered to what you uploaded. Passwords are Argon2id-hashed at OWASP's memory-hard baseline, and no
+endpoint tells you whether an address is registered: register answers `202` the same way whether the
+account is new or years old, and a wrong address and a wrong password are one identical `401`.
+
+No inbox to hand? Sign in with the shared demo account:
+
+| | |
+|---|---|
+| Email | `demo@documind.app` |
+| Password | `documind-demo-2026` |
+
+It is a real, pre-confirmed row in the live Atlas cluster, created by
+`backend/scripts/seed_demo_user.py`, so it needs no verification link. Everyone who signs in with it shares
+one namespace and one rate-limit bucket — the honest price of not asking a reviewer for an email address.
 
 ---
 
@@ -105,7 +116,10 @@ graph LR
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| `POST` | `/api/auth/session` | access code | Returns a HS256 session token; a missing `device_key` gets a new owner namespace |
+| `POST` | `/api/auth/register` | none | `202` and one fixed message, whether the address was new or not; sends the confirmation link |
+| `POST` | `/api/auth/resend` | none | `202`; mails only when the address exists and is still unconfirmed |
+| `POST` | `/api/auth/verify` | none | Turns a link token into a confirmed address. A link is not a session and vice versa |
+| `POST` | `/api/auth/login` | none | Returns a HS256 session token whose `sub` is that account's owner namespace |
 | `GET` | `/api/health` | none | Liveness, dependency-free |
 | `GET` | `/api/health/deep` | none | Mongo + Pinecone status, always 200 |
 | `POST` | `/api/upload` | session | Multipart, many files, `202` + background indexing (extension and size validated first) |
@@ -142,7 +156,10 @@ cp .env.local.example .env.local                     # defaults to http://localh
 npm run dev                                          # port 3000
 ```
 
-Open <http://localhost:3000> and enter the access code **`offline-demo`**.
+Open <http://localhost:3000> and sign in with **`demo@documind.app`** / **`quiet-harbor-2026`** — the
+script seeds that account in memory at startup and prints it, so the offline stack never needs a real mail
+send. Registering a different address works too: with `MAIL_TRANSPORT=console` (the default) its
+confirmation link is written to the server log instead of emailed.
 
 Honest caveat: offline retrieval scores by word overlap, not embedding similarity. It is a faithful
 *shape* of search, not a faithful ranking — use it to exercise the product, never to tune answer
@@ -167,8 +184,8 @@ uvicorn app.main:app --reload --port 8000
 | `PINECONE_INDEX_NAME` | any name; the app creates the index on first use |
 | `MONGODB_URI` | Atlas → Connect → Drivers (include the password) |
 | `JWT_SECRET` | `openssl rand -hex 32` — must be ≥32 characters or the app refuses to boot |
-| `DEMO_ACCESS_CODE` | a code you invent, ≥6 characters; this is what visitors type |
 | `CORS_ORIGINS` | comma-separated, e.g. `http://localhost:3000` — never `*` in production |
+| `SMTP_USER` / `SMTP_PASSWORD` | only if you set `MAIL_TRANSPORT=smtp`; the password is a [Gmail App Password](https://myaccount.google.com/apppasswords), not the account password. Locally the default `console` transport prints the link instead, so no mail account is needed |
 
 `.env` is gitignored from the first commit. The app fails fast at import if a required value is missing:
 a crash at boot beats a 500 buried inside a LangChain call stack mid-request.
@@ -176,7 +193,7 @@ a crash at boot beats a 500 buried inside a LangChain call stack mid-request.
 ## Tests
 
 ```bash
-cd backend && pytest -q          # 203 tests, no network, no credentials
+cd backend && pytest -q          # 312 tests, no network, no credentials
 ruff check app tests scripts
 cd ../frontend && npm run lint && npm run build
 ```
@@ -224,9 +241,11 @@ domain carries a random suffix even when the project name is taken, which is why
 `render.yaml` names it in full instead of guessing from the project slug.
 
 **Cold starts — the choice made here.** Render's free instance spins down after ~15 minutes idle and
-takes about a minute to wake. This project takes option 1 from `system.md`: **accept it and design for
-it.** The gate's error copy tells the visitor the server may be waking up, and the sign-in retry is a
-single click. The alternative — a cron pinging `/health` every 10 minutes — would hide the constraint
+takes a minute and a half to wake — measured, not estimated: in the service log the container's own boot
+line and the first request that reached it were 81 s apart. This project takes option 1 from `system.md`:
+**accept it and design for
+it.** The sign-in error copy tells the visitor the server may be waking up, and the retry is a single
+click. The alternative — a cron pinging `/health` every 10 minutes — would hide the constraint
 from visitors while quietly burning the 750 free instance-hours a month, which is not "free" in the
 sense that matters. Being explicit about a real limitation is the more production-minded answer.
 
@@ -240,10 +259,16 @@ Stated plainly, because a list of limits is the most honest part of a portfolio 
 - **Embedding quality is capped on purpose.** MiniLM (384 dims) is weaker than a hosted 1536-dim model.
   The trade buys $0 and no rate limit on the one step that runs per chunk, which matters more on a free
   tier than benchmark accuracy.
-- **Single-user demo, not accounts.** Identity is a shared access code plus a signed token carrying an
-  owner id. There is no password, no email verification, no recovery flow, and no tenancy model beyond
-  "your namespace is separate from theirs". The `X-Demo-Key` path outside production is a convenience
-  and is not an identity system.
+- **Accounts, but no recovery.** There is a password and an email confirmation step; there is no forgotten
+  password flow, no second factor, and no way to change an address. A locked-out visitor registers again.
+  That is a demo-sized scope decision, not an oversight — the tenancy model is still "your namespace is
+  separate from theirs", with no roles or sharing inside it.
+- **Mail goes through one personal Gmail.** `smtplib` with an App Password, no queue, no provider. A
+  transient SMTP failure is a `502` the visitor retries by hand, and Gmail will throttle the account if the
+  signup rate ever grows. `core/mail.py` is one file with one call site, so a transactional provider is a
+  swap rather than a refactor.
+- **The shared demo account is public.** Its documents are visible to everyone who signs in with it, and it
+  is one rate-limit bucket. Use your own account for anything you do not want read.
 - **Rate limiting is per process.** State lives in a `deque` inside one worker, so a second Render
   instance would double the effective allowance. Correct for one free instance; would need Redis above
   that.
@@ -273,7 +298,7 @@ Stated plainly, because a list of limits is the most honest part of a portfolio 
 | 3 · Multi-agent | router → retrieval → synthesis → critique, bounded revision loop | ✅ |
 | 4 · Frontend | Streaming chat UI, citations, upload + document scope, history | ✅ |
 | 5 · Hardening | JWT sessions, rate limiting, retry/backoff, JSON logs, upload validation | ✅ |
-| 6 · Testing | 203 tests: unit, integration, smoke, query-shape assertions | ✅ |
+| 6 · Testing | 312 tests: unit, integration, smoke, query-shape assertions | ✅ |
 | 7 · Deploy + docs | Render + Vercel, this README, `ARCHITECTURE.md` | ✅ live |
 | 8 · Portfolio polish (stretch) | Demo video, write-up for Amiru AI Lab / HuggingFace | ⬜ |
 

@@ -1,9 +1,9 @@
 """
 models/auth.py — Request and response contracts for signing up and signing in.
 
-`SessionResponse` is unchanged from the access-code flow on purpose: `owner_id` is the namespace the token
-unlocks, an account's `user_id` is exactly that, and every router already reads it from the signed `sub`.
-Adding accounts therefore changes who mints the token and not what the rest of the API accepts.
+`SessionResponse` kept the shape the access-code flow used: `owner_id` is the namespace the token unlocks,
+an account's `user_id` is exactly that, and every router already reads it from the signed `sub`. Adding
+accounts therefore changed who mints the token and not what the rest of the API accepts.
 
 Passwords are `SecretStr`, not `str`. A plain field survives into a `repr()`, a debug log, an exception
 traceback printed by a dependency, and a `model_dump()` that somebody adds later for a completely
@@ -16,27 +16,6 @@ from __future__ import annotations
 from pydantic import BaseModel, EmailStr, Field, SecretStr
 
 from app.core.password import MAX_LENGTH, MIN_LENGTH
-
-
-class SessionRequest(BaseModel):
-    """The published-access-code flow, still live until the frontend stops calling it.
-
-    Kept verbatim rather than edited alongside the new models: `/api/auth/session` is what the deployed
-    demo uses today, and this PR adds the account endpoints without switching the product over. Removing
-    this is a later, separate commit.
-    """
-
-    access_code: str = Field(
-        ...,
-        min_length=1,
-        max_length=64,
-        description="The demo code from the README. Required once per session, not per request.",
-    )
-    device_key: str | None = Field(
-        default=None,
-        max_length=128,
-        description="The owner id from a previous session, so a returning visitor sees their own files.",
-    )
 
 
 class RegisterRequest(BaseModel):

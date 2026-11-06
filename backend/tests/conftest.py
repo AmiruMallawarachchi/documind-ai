@@ -29,7 +29,6 @@ os.environ.setdefault("PINECONE_API_KEY", "test-pinecone-key")
 os.environ.setdefault("PINECONE_INDEX_NAME", "test-index")
 os.environ.setdefault("MONGODB_URI", "mongodb://localhost:27017")
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-not-a-real-secret")
-os.environ.setdefault("DEMO_ACCESS_CODE", "test-access-code")
 # Generous by default so the suite never trips a limit by accident; the rate-limit tests lower these on the
 # settings object, which the dependencies read at call time.
 os.environ.setdefault("CHAT_REQUESTS_PER_MINUTE", "1000")
