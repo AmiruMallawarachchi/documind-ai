@@ -75,8 +75,8 @@ function headers(): HeadersInit {
 }
 
 /**
- * One 401 anywhere means the stored token is worthless — expired, or re-signed by a server that restarted
- * with a different secret. Clearing it here puts the whole app back to the access-code prompt instead of
+ * One 401 anywhere means the stored token is worthless — expired, or issued by a server that restarted with
+ * a different secret. Clearing it here puts the whole app back to the sign-in panel instead of leaving every
  * leaving every panel to fail on its own.
  */
 function noteIfRejected(status: number): void {

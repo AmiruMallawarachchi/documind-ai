@@ -1,12 +1,16 @@
 "use client";
 
 /**
- * lib/use-session.ts — The React half of the access-code gate.
+ * lib/use-session.ts — The React half of authentication.
  *
  * Owns exactly one question: is there a usable token in this browser right now? Everything else — storage,
- * the exchange with the server, the header — lives in lib/session.ts, which is the store this reads through
- * `useSyncExternalStore`. That hook is what lets a page rendered without localStorage settle on the real
- * answer after hydration without a setState-in-effect to cause a second render pass.
+ * the four calls to the auth endpoints, the header — lives in lib/session.ts, which is the store this reads
+ * through `useSyncExternalStore`. That hook is what lets a page rendered without localStorage settle on the
+ * real answer after hydration without a setState-in-effect to cause a second render pass.
+ *
+ * It no longer exposes a `submit`. The sign-in form is the only thing that submits anything, it needs the
+ * field state, the busy flag and the 403 branch alongside it, and threading all three through a hook that
+ * two other panels use bought a wider interface for nobody.
  */
 
 import { useCallback, useSyncExternalStore } from "react";
@@ -15,7 +19,6 @@ import {
   getSessionServerSnapshot,
   getSessionSnapshot,
   SESSION_PENDING,
-  signInWithAccessCode,
   subscribeSession,
   publishSession,
   type Session,
@@ -26,8 +29,6 @@ export type SessionState = {
   session: Session | null;
   /** False only while the server snapshot is still standing in for the browser's. */
   ready: boolean;
-  /** Resolves to an error message to show, or null when the workspace may open. */
-  submit: (accessCode: string) => Promise<string | null>;
   signOut: () => void;
 };
 
@@ -41,13 +42,7 @@ export function useSession(): SessionState {
   const ready = snapshot !== SESSION_PENDING;
   const session = ready ? snapshot : null;
 
-  const submit = useCallback(async (accessCode: string) => {
-    const result = await signInWithAccessCode(accessCode);
-    if ("error" in result) return result.error;
-    return null;
-  }, []);
-
   const signOut = useCallback(() => publishSession(null), []);
 
-  return { session, ready, submit, signOut };
+  return { session, ready, signOut };
 }
