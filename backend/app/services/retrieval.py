@@ -10,6 +10,9 @@ ground itself in what this module hands it, so the rules here are about protecti
   3. Collapse duplicate near-identical chunks. Overlap seeding means a boundary sentence can appear
      in two consecutive chunks; retrieving both wastes a slot the user paid for.
   4. Say "not found" loudly. Returning an empty list is a meaningful answer, not an error to paper over.
+  5. Re-rank once, unfiltered, when a *narrow* scope returns nothing. A question about a document as a
+     whole shares no vocabulary with the passages inside it, so the floor calls the right file noise; see
+     `retrieve`.
 
 The score floor is a cosine-similarity threshold tuned for all-MiniLM-L6-v2, where unrelated text
 typically lands below 0.20 and on-topic text sits around 0.35+. It is a default, not a constant —
@@ -35,6 +38,12 @@ DEFAULT_SCORE_FLOOR = 0.18
 # answer, and every extra chunk costs prompt tokens against Groq's free-tier daily limit.
 DEFAULT_TOP_K = 6
 
+# How many documents may be in scope before a zero-hit search is allowed to fall back to unfiltered
+# ranking. Three is a guess with a reason behind it: a person asking about one, two or three open files is
+# almost certainly asking about *those* files, while a question aimed at a whole library that returns
+# nothing is most likely asking about something the library does not contain.
+_OVERVIEW_SCOPE_MAX_DOCUMENTS = 3
+
 
 def _deduplicate(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
     """Drop chunks whose text is an exact repeat of a higher-scoring neighbour.
@@ -53,6 +62,29 @@ def _deduplicate(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
     return unique
 
 
+def _ranked(
+    *,
+    owner_id: str,
+    query_vector: list[float],
+    top_k: int,
+    document_ids: list[str] | None,
+    score_floor: float | None,
+) -> tuple[list[RetrievedChunk], int]:
+    """One vector query, de-duplicated, in score order — plus how many matches arrived before that.
+
+    The raw count is returned separately because the difference between the two is the deduplication the
+    overlap seeding produces, which is the number worth seeing in a log when passages look repeated.
+    """
+    chunks = query_similar(
+        owner_id=owner_id,
+        query_vector=query_vector,
+        top_k=top_k,
+        document_ids=document_ids,
+        score_threshold=score_floor,
+    )
+    return _deduplicate(chunks), len(chunks)
+
+
 def retrieve(
     *,
     owner_id: str,
@@ -66,29 +98,56 @@ def retrieve(
     The query goes through the same model and normalisation as indexing — that is the invariant that
     makes the cosine scores mean anything. Mixing embedding models here would produce technically
     valid vectors in an unrelated space and silently destroy retrieval quality.
+
+    A second, unfiltered attempt covers the questions similarity search is structurally blind to. "What
+    is this document?" is a request about a file as a whole and therefore shares no vocabulary with any
+    passage inside it; measured against the exact document it asks about, this scores 0.08, well under the
+    floor. Ranking without the floor still puts that document's own passages first, so the fallback costs
+    one extra query and returns evidence rather than a refusal.
+
+    It is limited to a narrow scope on purpose. The floor exists to keep irrelevant text out of the prompt,
+    and with a whole library in scope a zero-hit search genuinely means "not in your documents" - lowering
+    it there would paste noise into the prompt and buy a confidently wrong answer, which is the exact
+    failure the floor was introduced to prevent.
     """
     if not question.strip():
         return []
 
     query_vector = embed_query(question)
-    chunks = query_similar(
+    hits, matches = _ranked(
         owner_id=owner_id,
         query_vector=query_vector,
         top_k=top_k,
         document_ids=document_ids,
-        score_threshold=score_floor,
+        score_floor=score_floor,
     )
-    deduped = _deduplicate(chunks)
+
+    if not hits and document_ids and len(document_ids) <= _OVERVIEW_SCOPE_MAX_DOCUMENTS:
+        unfiltered, _ = _ranked(
+            owner_id=owner_id,
+            query_vector=query_vector,
+            top_k=top_k,
+            document_ids=document_ids,
+            score_floor=None,
+        )
+        if unfiltered:
+            logger.info(
+                "overview fallback owner=%s scope=%d hits=%d",
+                owner_id,
+                len(document_ids),
+                len(unfiltered),
+            )
+            return unfiltered
 
     logger.info(
         "retrieved owner=%s question_chars=%d hits=%d after_dedupe=%d floor=%.2f",
         owner_id,
         len(question),
-        len(chunks),
-        len(deduped),
+        matches,
+        len(hits),
         score_floor,
     )
-    return deduped
+    return hits
 
 
 def build_context_block(chunks: list[RetrievedChunk]) -> str:
