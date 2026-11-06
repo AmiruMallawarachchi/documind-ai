@@ -9,7 +9,8 @@
  * fill themselves in with effects.
  *
  * State that two panels need lives here and is passed down; state only one panel needs lives inside it.
- * `useDocuments` and `useChat` are where the actual behaviour lives, which keeps this file about layout.
+ * `useDocuments` and `useChat` are where the actual behaviour lives, and the sidebar's two lists are their
+ * own components, which keeps this file about layout.
  *
  * `Home` does one extra thing: it holds the session and decides whether the visitor sees the sign-in panel
  * or the board. `Workspace` is the board, and it only ever mounts with a token already in hand, so none of
@@ -21,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AuthPanel from "@/components/AuthPanel";
 import ChatPanel from "@/components/ChatPanel";
 import DocumentsPanel from "@/components/DocumentsPanel";
+import HistoryList from "@/components/HistoryList";
 import Button from "@/components/ui/Button";
 import { SECTION_TITLE } from "@/components/ui/tokens";
 import { API_URL, type ConversationSummary, listConversations } from "@/lib/api";
@@ -153,46 +155,14 @@ function Workspace({ ownerId, onSignOut }: { ownerId: string; onSignOut: () => v
             </Section>
 
             <Section title="History">
-              <div className="flex items-center gap-2">
-                <Button
-                  size="xs"
-                  onClick={() => {
-                    startThread(null);
-                    setShowSidebar(false);
-                  }}
-                >
-                  New chat
-                </Button>
-                <span className="text-[0.7rem] text-zinc-600">
-                  {conversations.length} saved
-                </span>
-              </div>
-              <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-                {conversations.map((conversation) => (
-                  <li key={conversation.conversation_id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        startThread(conversation.conversation_id);
-                        setShowSidebar(false);
-                      }}
-                      className={`w-full truncate rounded-lg px-2 py-1.5 text-left text-xs transition-colors ${
-                        conversation.conversation_id === conversationId
-                          ? "bg-zinc-800 text-zinc-100"
-                          : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
-                      }`}
-                      title={conversation.title}
-                    >
-                      {conversation.title}
-                    </button>
-                  </li>
-                ))}
-                {conversations.length === 0 && (
-                  <li className="px-2 py-1.5 text-xs text-zinc-600">
-                    No conversations yet.
-                  </li>
-                )}
-              </ul>
+              <HistoryList
+                conversations={conversations}
+                activeId={conversationId}
+                onSelect={(id) => {
+                  startThread(id);
+                  setShowSidebar(false);
+                }}
+              />
             </Section>
           </div>
 

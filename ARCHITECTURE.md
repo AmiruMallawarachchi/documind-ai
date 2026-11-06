@@ -283,6 +283,16 @@ Next.js 16 App Router, two routes (`/` and `/verify`), no server rendering of us
   and the two "Sign out" controls were the same action styled two ways — and six alert banners were one
   shape typed six ways. `tokens.ts` is deliberately small: a string used by exactly one component stays in
   that component.
+- The rest of `components/` is one component per concern, split by who needs the state: `DocumentRow` keeps
+  its own delete confirmation (a panel-level `confirming: string | null` meant opening a second row's
+  question closed the first), `AgentTrace` keeps its own disclosure, and `SourceList` does not — which
+  source is open is also set by the `[n]` buttons inside the answer, so `Message` holds it and passes it
+  down. `HistoryList` says which thread the reader picked and lets `app/page.tsx` decide what that means
+  for the rest of the tree.
+- Three pure modules sit under `lib/` because they are logic with edge cases and no DOM: `citations.ts`
+  splits an answer on its `[n]` markers, `trace.ts` translates the graph's node names (and passes an unknown
+  one through rather than blanking a step out of the reader's view), and `format.ts` owns the byte-size
+  display contract.
 - The variants in `components/ui/Button.tsx` carry their hover and disabled classes inside the variant, and
   a caller must not try to replace them through `className`. Tailwind emits `hover:text-zinc-200` and
   `hover:text-red-300` in the same specificity band, so which one wins depends on the order Tailwind happens
@@ -330,13 +340,16 @@ a rule that only a test can hold: `stream_text` must never restart a stream that
 words, because the retry appends a second answer mid-sentence — `test_llm_retry.py` caught exactly that
 defect while it was still a docstring promise rather than a behaviour.
 
-The frontend has its own suite: `cd frontend && npm test` — **19 component tests** under vitest and jsdom,
-no browser and no backend. It exists because a broken `[1]` citation marker renders as perfectly readable
-prose with a stray bracket in it. The type check passed, the lint passed, the build passed, and clicking
-through the app still showed a sentence — only a test that asserts what the answer bubble actually says
-catches that class of defect. Eight of the nineteen are that answer-rendering case; the other eleven hold
-the rules `components/ui/` exists to make unbreakable — that a busy control keeps its colour, that a banner
-is a `div` so it can carry a button, and that a status is a word as well as a colour.
+The frontend has its own suite: `cd frontend && npm test` — **38 tests** under vitest and jsdom, no browser
+and no backend. It exists because a broken `[1]` citation marker renders as perfectly readable prose with a
+stray bracket in it. The type check passed, the lint passed, the build passed, and clicking through the app
+still showed a sentence — only a test that asserts what the answer bubble actually says catches that class
+of defect.
+
+Six files, and the split is the point: `citations`, `trace` and `format` test pure functions with no DOM
+standing between the assertion and the logic, while `message`, `ui` and `document-row` test rendered output
+— that a busy control keeps its colour, that a banner is a `div` so it can carry a button, that a status is
+a word as well as a colour, and that a delete confirmation asks once per row instead of once per panel.
 
 ---
 

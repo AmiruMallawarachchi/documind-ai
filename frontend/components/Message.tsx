@@ -1,73 +1,28 @@
 "use client";
 
 /**
- * components/Message.tsx — One transcript row: the answer, its citations, and the agent trace.
+ * components/Message.tsx — One transcript row, assembled from the three things a row is made of.
+ *
+ * The answer bubble, its sources (`SourceList`) and the debug trail behind it (`AgentTrace`). This file
+ * keeps the bubble itself, because the bubble is the message, and the one piece of state two of the three
+ * children need — which source is open, because a `[2]` in the prose and the `[2]` row below are the same
+ * disclosure. Everything a single child owns stays inside that child.
  *
  * The `[n]` markers are rendered as buttons rather than left as literal text because the whole promise of
  * the product is "every claim has a source": a reader who sees [2] should be able to find out what [2]
- * says in one click, not scroll hunting for a footnote.
- *
- * The trace is shown collapsed. It is the debug view that makes a multi-agent answer inspectable — which
- * passages were found, whether the critic rejected a draft — and it is exactly what a user wants when an
- * answer looks evasive, and noise when it does not.
+ * says in one click, not scroll hunting for a footnote. Splitting them out of the sentence is `lib/citations`.
  */
 
 import { useState } from "react";
 
+import AgentTrace from "@/components/AgentTrace";
+import SourceList from "@/components/SourceList";
 import Banner from "@/components/ui/Banner";
-import type { Citation } from "@/lib/api";
+import { parseAnswer } from "@/lib/citations";
 import type { UiMessage } from "@/lib/use-chat";
-
-const STAGE_LABELS: Record<string, string> = {
-  router: "routed",
-  retrieval: "searched",
-  synthesis: "drafted",
-  critique: "verified",
-  finalise: "answered",
-  direct: "replied",
-  guard: "checked corpus",
-};
-
-function traceLabel(step: string): string {
-  const [agent, detail] = step.split(":");
-  const friendly = STAGE_LABELS[agent] ?? agent;
-  return detail ? `${friendly} ${detail}` : friendly;
-}
-
-/** A run of adjacent markers, the only split piece that should become buttons instead of prose. */
-const MARKER_RUN = /^(?:\[\d+\])+$/;
-
-/** Split the answer on [n] markers and turn each into a button that scrolls to its citation. */
-function withCitations(content: string, onJump: (index: number) => void) {
-  // The repeating group has to contain the closing `]`. Split hands back exactly what it matched, so a
-  // group that stops at the digits returns `[1`, which no full-marker test recognises: the citation
-  // renders as broken text and its `]` disappears with the split.
-  const parts = content.split(/((?:\[\d+\])+)/g);
-  return parts.map((part, position) => {
-    if (!MARKER_RUN.test(part)) return <span key={position}>{part}</span>;
-
-    const indexes = [...part.matchAll(/\d+/g)].map(([digits]) => Number(digits));
-    return (
-      <span key={position} className="whitespace-nowrap">
-        {indexes.map((index) => (
-          <button
-            key={index}
-            type="button"
-            onClick={() => onJump(index)}
-            className="mx-0.5 rounded bg-indigo-500/15 px-1 align-super text-[0.7em] font-semibold text-indigo-300 transition-colors hover:bg-indigo-500/30"
-            aria-label={`Go to source ${index}`}
-          >
-            {index}
-          </button>
-        ))}
-      </span>
-    );
-  });
-}
 
 export default function Message({ message }: { message: UiMessage }) {
   const [openSource, setOpenSource] = useState<number | null>(null);
-  const [showTrace, setShowTrace] = useState(false);
 
   if (message.role === "user") {
     return (
@@ -92,7 +47,25 @@ export default function Message({ message }: { message: UiMessage }) {
         <div className="rounded-2xl rounded-bl-sm border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm leading-relaxed text-zinc-100">
           {message.content ? (
             <p className="whitespace-pre-wrap">
-              {withCitations(message.content, jump)}
+              {parseAnswer(message.content).map((part, position) =>
+                part.kind === "text" ? (
+                  <span key={position}>{part.text}</span>
+                ) : (
+                  <span key={position} className="whitespace-nowrap">
+                    {part.indexes.map((index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => jump(index)}
+                        className="mx-0.5 rounded bg-indigo-500/15 px-1 align-super text-[0.7em] font-semibold text-indigo-300 transition-colors hover:bg-indigo-500/30"
+                        aria-label={`Go to source ${index}`}
+                      >
+                        {index}
+                      </button>
+                    ))}
+                  </span>
+                ),
+              )}
             </p>
           ) : message.pending ? (
             <p className="text-zinc-500">Working on it…</p>
@@ -115,70 +88,17 @@ export default function Message({ message }: { message: UiMessage }) {
         {message.error && <Banner>{message.error}</Banner>}
 
         {message.citations.length > 0 && (
-          <ul className="space-y-1.5">
-            {message.citations.map((citation: Citation) => (
-              <li
-                key={`${citation.chunk_id}-${citation.index}`}
-                id={`citation-${citation.index}`}
-                className={`rounded-lg border px-3 py-2 text-xs transition-colors ${
-                  openSource === citation.index
-                    ? "border-indigo-500/60 bg-indigo-500/10"
-                    : "border-zinc-800 bg-zinc-900/60"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setOpenSource(
-                      openSource === citation.index ? null : citation.index,
-                    )
-                  }
-                  className="flex w-full items-baseline gap-2 text-left"
-                  aria-expanded={openSource === citation.index}
-                >
-                  <span className="font-semibold text-indigo-300">
-                    [{citation.index}]
-                  </span>
-                  <span className="truncate text-zinc-300">
-                    {citation.filename}
-                  </span>
-                  <span className="ml-auto shrink-0 text-zinc-500">
-                    p.{citation.page_number}
-                  </span>
-                </button>
-                {openSource === citation.index && (
-                  <p className="mt-2 border-t border-zinc-800 pt-2 text-zinc-400">
-                    {citation.snippet}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
+          <SourceList
+            citations={message.citations}
+            openIndex={openSource}
+            onToggle={(index) =>
+              setOpenSource(openSource === index ? null : index)
+            }
+          />
         )}
 
         {message.agentTrace.length > 0 && !message.pending && (
-          <div className="text-[0.7rem] text-zinc-500">
-            <button
-              type="button"
-              onClick={() => setShowTrace((value) => !value)}
-              className="hover:text-zinc-300"
-              aria-expanded={showTrace}
-            >
-              {showTrace ? "Hide" : "Show"} how this was answered
-            </button>
-            {showTrace && (
-              <ol className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1">
-                {message.agentTrace.map((step, position) => (
-                  <li
-                    key={`${step}-${position}`}
-                    className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono"
-                  >
-                    {traceLabel(step)}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
+          <AgentTrace steps={message.agentTrace} />
         )}
       </div>
     </div>

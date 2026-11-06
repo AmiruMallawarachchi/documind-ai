@@ -3,10 +3,11 @@
 /**
  * components/DocumentsPanel.tsx — Upload, watch indexing, choose which files a question searches.
  *
- * Indexing is asynchronous, so this panel is a poller's view of the pipeline: a row shows `uploading`
- * until the background task finishes and then flips to `indexed` or `failed` with the backend's own error
- * text. The failed case is shown inline rather than as a toast because the reason ("this PDF is scanned,
- * no text layer") is something the user acts on, not something they dismiss.
+ * Indexing is asynchronous, so this panel is a poller's view of the pipeline: it asks for the list, and
+ * each file renders itself through `DocumentRow` — `uploading` until the background task finishes, then
+ * `indexed` or `failed` with the backend's own error text. The failed case is shown inline rather than as
+ * a toast because the reason ("this PDF is scanned, no text layer") is something the user acts on, not
+ * something they dismiss.
  *
  * Scope selection is per-question and defaults to "everything indexed". Restricting it is the difference
  * between "what does the loan agreement say" pulling passages from three unrelated files and answering
@@ -21,18 +22,12 @@ import { useRef, useState } from "react";
 
 import Banner from "@/components/ui/Banner";
 import Button from "@/components/ui/Button";
-import StatusPill from "@/components/ui/StatusPill";
+import DocumentRow from "@/components/DocumentRow";
 import { HINT } from "@/components/ui/tokens";
 import type { DocumentRecord } from "@/lib/api";
 import type { DocumentsState } from "@/lib/use-documents";
 
 const ACCEPTED = ".pdf,.docx,.txt";
-
-function formatBytes(size: number): string {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 type Props = {
   state: DocumentsState;
@@ -49,7 +44,6 @@ export default function DocumentsPanel({
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [confirming, setConfirming] = useState<string | null>(null);
 
   const indexed = state.documents.filter((row) => row.status === "indexed");
   const pending = state.documents.filter(
@@ -145,78 +139,15 @@ export default function DocumentsPanel({
           </li>
         )}
 
-        {state.documents.map((document: DocumentRecord) => {
-          const isReady = document.status === "indexed";
-          return (
-            <li
-              key={document.document_id}
-              className="rounded-lg px-2 py-2.5 transition-colors hover:bg-zinc-900/60"
-            >
-              <div className="flex items-start gap-2">
-                <label className="mt-0.5 shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(document.document_id)}
-                    onChange={() => onToggleScope(document.document_id)}
-                    disabled={!isReady}
-                    aria-label={`Search ${document.filename}`}
-                    className="h-3.5 w-3.5 accent-indigo-500 disabled:opacity-30"
-                  />
-                </label>
-
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-zinc-200" title={document.filename}>
-                    {document.filename}
-                  </p>
-                  <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.7rem] text-zinc-500">
-                    <StatusPill status={document.status} />
-                    {isReady && (
-                      <span>
-                        {document.chunk_count} chunks
-                        {document.page_count > 0 && ` · ${document.page_count} pages`}
-                      </span>
-                    )}
-                    <span>{formatBytes(document.size_bytes)}</span>
-                  </p>
-
-                  {document.error && (
-                    <p className="mt-1.5 text-[0.7rem] leading-snug text-red-400">
-                      {document.error}
-                    </p>
-                  )}
-                </div>
-
-                {confirming === document.document_id ? (
-                  <div className="flex shrink-0 gap-1">
-                    <Button
-                      variant="danger"
-                      size="xs"
-                      onClick={() => {
-                        void state.remove(document.document_id);
-                        setConfirming(null);
-                      }}
-                    >
-                      Delete
-                    </Button>
-                    <Button variant="outline" size="xs" onClick={() => setConfirming(null)}>
-                      Cancel
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    variant="icon"
-                    size="xs"
-                    onClick={() => setConfirming(document.document_id)}
-                    aria-label={`Delete ${document.filename}`}
-                    className="shrink-0"
-                  >
-                    ✕
-                  </Button>
-                )}
-              </div>
-            </li>
-          );
-        })}
+        {state.documents.map((document: DocumentRecord) => (
+          <DocumentRow
+            key={document.document_id}
+            document={document}
+            selected={selectedIds.includes(document.document_id)}
+            onToggleScope={onToggleScope}
+            onRemove={(documentId) => void state.remove(documentId)}
+          />
+        ))}
       </ul>
 
       <p className={HINT}>
