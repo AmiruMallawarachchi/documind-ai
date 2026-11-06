@@ -193,7 +193,7 @@ a crash at boot beats a 500 buried inside a LangChain call stack mid-request.
 ## Tests
 
 ```bash
-cd backend && pytest -q          # 295 tests, no network, no credentials
+cd backend && pytest -q          # 312 tests, no network, no credentials
 ruff check app tests scripts
 cd ../frontend && npm run lint && npm run build
 ```
@@ -241,7 +241,9 @@ domain carries a random suffix even when the project name is taken, which is why
 `render.yaml` names it in full instead of guessing from the project slug.
 
 **Cold starts — the choice made here.** Render's free instance spins down after ~15 minutes idle and
-takes about a minute to wake. This project takes option 1 from `system.md`: **accept it and design for
+takes a minute and a half to wake — measured, not estimated: in the service log the container's own boot
+line and the first request that reached it were 81 s apart. This project takes option 1 from `system.md`:
+**accept it and design for
 it.** The sign-in error copy tells the visitor the server may be waking up, and the retry is a single
 click. The alternative — a cron pinging `/health` every 10 minutes — would hide the constraint
 from visitors while quietly burning the 750 free instance-hours a month, which is not "free" in the
@@ -296,7 +298,7 @@ Stated plainly, because a list of limits is the most honest part of a portfolio 
 | 3 · Multi-agent | router → retrieval → synthesis → critique, bounded revision loop | ✅ |
 | 4 · Frontend | Streaming chat UI, citations, upload + document scope, history | ✅ |
 | 5 · Hardening | JWT sessions, rate limiting, retry/backoff, JSON logs, upload validation | ✅ |
-| 6 · Testing | 295 tests: unit, integration, smoke, query-shape assertions | ✅ |
+| 6 · Testing | 312 tests: unit, integration, smoke, query-shape assertions | ✅ |
 | 7 · Deploy + docs | Render + Vercel, this README, `ARCHITECTURE.md` | ✅ live |
 | 8 · Portfolio polish (stretch) | Demo video, write-up for Amiru AI Lab / HuggingFace | ⬜ |
 
