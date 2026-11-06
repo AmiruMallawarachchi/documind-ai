@@ -76,13 +76,16 @@ class Settings(BaseSettings):
     )
 
     # ── Mail ──────────────────────────────────────────────────────────────────
-    # Verification links go out through one of two transports. `console` writes the link to the log instead
-    # of sending it, which is what lets the suite, a fresh clone, and a reviewer with no SMTP credentials
-    # reach a verified account at all. `smtp` is the deployed setting and is configured for Gmail's App
-    # Password flow: smtp.gmail.com:465 over implicit TLS.
-    mail_transport: Literal["console", "smtp"] = Field(
+    # Verification links go out through one of three transports. `console` writes the link to the log
+    # instead of sending it, which is what lets the suite, a fresh clone, and a reviewer with no mail
+    # credentials reach a verified account at all. `smtp` talks to Gmail's App Password endpoint
+    # (smtp.gmail.com:465, implicit TLS). `brevo` posts the same message to an HTTPS mail API, and is the
+    # deployed setting: Render blocks outbound traffic to SMTP ports 25, 465 and 587 on free instances,
+    # so `smtp` can boot here but can never deliver there.
+    mail_transport: Literal["console", "smtp", "brevo"] = Field(
         default="console",
-        description="'console' logs the message; 'smtp' sends it through Gmail. Anything else is refused at boot.",
+        description="'console' logs the message; 'smtp' sends through Gmail; 'brevo' posts to an HTTPS "
+        "mail API. Anything else is refused at boot.",
     )
     smtp_host: str = Field(default="smtp.gmail.com", description="SMTP relay host.")
     smtp_port: int = Field(default=465, description="SMTP relay port; 465 is implicit TLS.")
@@ -93,6 +96,14 @@ class Settings(BaseSettings):
     smtp_password: str = Field(
         default="",
         description="A Gmail App Password for that address (SMTP_PASSWORD) — not the account password.",
+    )
+    # The same pair of rules applies to the HTTPS transport: both empty by default, both required to boot
+    # it. The key is a bearer credential, so it goes in a request header and is never logged; the sender
+    # address is separate from `smtp_user` on purpose, because Brevo only mails from an address it has
+    # verified, and that ownership check has nothing to do with which host answers port 465.
+    brevo_api_key: str = Field(default="", description="Brevo API key (BREVO_API_KEY) for the HTTPS mail transport.")
+    brevo_sender: str = Field(
+        default="", description="A sender address verified in Brevo (BREVO_SENDER); verification mail comes from this."
     )
 
     # The verification link points at the frontend, which is a separate origin from this API. Read from
@@ -147,16 +158,22 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
 
     @model_validator(mode="after")
-    def _smtp_transport_requires_credentials(self) -> "Settings":
-        """Refuse to boot an SMTP configuration that cannot send.
+    def _mail_transport_requires_credentials(self) -> "Settings":
+        """Refuse to boot a mail configuration that cannot send.
 
         WHY: `MAIL_TRANSPORT=smtp` with a blank password is a deploy-time typo, and the only way it shows
         up is a visitor waiting for an email that never leaves the process. Fail at boot with the name of
-        the missing variable instead.
+        the missing variable instead. The HTTPS transport gets the same rule because a missing API key is
+        the identical mistake, and Brevo answers it with a 401 that looks like a mail outage.
         """
         if self.mail_transport == "smtp" and not (self.smtp_user.strip() and self.smtp_password.strip()):
             raise ValueError(
                 "MAIL_TRANSPORT=smtp needs both SMTP_USER and SMTP_PASSWORD. For a local run, leave "
+                "MAIL_TRANSPORT=console and the verification link is written to the log instead."
+            )
+        if self.mail_transport == "brevo" and not (self.brevo_api_key.strip() and self.brevo_sender.strip()):
+            raise ValueError(
+                "MAIL_TRANSPORT=brevo needs both BREVO_API_KEY and BREVO_SENDER. For a local run, leave "
                 "MAIL_TRANSPORT=console and the verification link is written to the log instead."
             )
         return self

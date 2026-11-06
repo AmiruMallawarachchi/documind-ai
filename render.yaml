@@ -47,16 +47,26 @@ services:
         # The sending address. Not a secret in itself, but it identifies a personal mailbox and belongs
         # next to its credential rather than in a public repo.
         sync: false
+      - key: BREVO_API_KEY
+        # The credential for the HTTPS transport, which is the one that works on a free instance: Render
+        # blocks outbound traffic to SMTP ports 25, 465 and 587 there, so Gmail's relay is unreachable from
+        # this service no matter what the two values above say.
+        sync: false
+      - key: BREVO_SENDER
+        # A sender address Brevo has verified. Not a secret, but it identifies a mailbox and only means
+        # anything next to the key that is allowed to use it.
+        sync: false
 
       # ── Not secret, but deployment-specific ───────────────────────────────────
       - key: PINECONE_INDEX_NAME
         value: documind-chunks
       - key: MAIL_TRANSPORT
-        # `smtp` once SMTP_USER and SMTP_PASSWORD are set. The value here is the safe one: a Blueprint
-        # sync cannot turn a working mail send into a silent `console` fallback, and it cannot turn a
-        # missing credential into a booting service that never delivers anything (config.py refuses
-        # `smtp` without both).
-        value: console
+        # The dashboard owns this value, because it is the one setting that changes when mail credentials
+        # arrive: `console` for a fresh clone (config.py's default, links written to the log), `brevo` for
+        # this service, and `smtp` for anyone who runs it on a host that lets SMTP out. Declaring a literal
+        # here would let a Blueprint sync quietly rewrite a working value back to `console`, and that
+        # failure is invisible — every visitor keeps getting a 202 and a link that only ever reaches the log.
+        sync: false
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT
