@@ -15,7 +15,9 @@ auth for this endpoint, and an App Password can be revoked on its own.
 Failures are reported by exception *class*, never message. A server reply to a failed AUTH command can
 echo the credential in its text, and this module is the one place in the app that holds a password. The
 same rule covers the API key: it travels in a request header, and `urllib`'s exceptions carry the URL and
-the status line but never the headers — which is still not a reason to print anything else.
+the status line but never the headers — which is still not a reason to print anything else. What is safe
+to print, and is printed, is the numeric status: it is the only thing that tells a wrong key apart from an
+unverified sender, and neither of them can carry a secret.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import smtplib
+import urllib.error
 import urllib.request
 from email.message import EmailMessage
 from email.utils import formataddr
@@ -94,9 +97,15 @@ def _send_brevo(*, to: str, subject: str, body: str) -> None:
     try:
         with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
             message_id = json.loads(response.read()).get("messageId", "")
+    except urllib.error.HTTPError as exc:
+        # The status is the whole diagnosis: 401 is a bad key, 400 is a sender Brevo will not mail from,
+        # 453 is an account not cleared to send. `exc.fp` holds the response body, which is where a
+        # provider can echo back the key it refused, so only `exc.code` — an integer — is printed.
+        logger.error("mail failed to=%s status=%s error=HTTPError", to, exc.code)
+        raise MailError("The verification email could not be sent.") from exc
     except Exception as exc:  # noqa: BLE001 - a transport blowing up must never become a 500.
-        # Broad on purpose, for the same reason as the SMTP branch: a 401, a 5xx, a refused connection and
-        # a timeout are different exception trees and the caller's answer is the same for all of them.
+        # Broad on purpose, for the same reason as the SMTP branch: a refused connection and a timeout are
+        # different exception trees and the caller's answer is the same for both.
         logger.error("mail failed to=%s error=%s", to, type(exc).__name__)
         raise MailError("The verification email could not be sent.") from exc
 
