@@ -18,6 +18,12 @@
  * The weight lives with the variant, not the size, because these are not typography choices — a
  * `primary` is an action and a `ghost` is a correction, and the weight is how you tell them apart at a
  * glance.
+ *
+ * Not every `<button>` belongs here, and the boundary is deliberate: a control whose size comes from the
+ * text around it is not a rectangle with a variant. That leaves the citation chips (`text-[0.7em]`,
+ * `align-super`), the source and history rows (full-width, left-aligned, truncating), the mode switch (two
+ * halves of one inset track), and anything absolutely positioned inside a field. Where the reason is not
+ * obvious from the markup — Dismiss, select-all — the call site says so in one line.
  */
 
 import type { ButtonHTMLAttributes } from "react";
