@@ -12,6 +12,7 @@
  * here, so the state cannot live in one of the two children.
  */
 
+import { FOCUS } from "@/components/ui/tokens";
 import type { Citation } from "@/lib/api";
 
 type Props = {
@@ -36,7 +37,7 @@ export default function SourceList({ citations, openIndex, onToggle }: Props) {
           <button
             type="button"
             onClick={() => onToggle(citation.index)}
-            className="flex w-full items-baseline gap-2 text-left"
+            className={`flex w-full items-baseline gap-2 text-left ${FOCUS}`}
             aria-expanded={openIndex === citation.index}
           >
             <span className="font-semibold text-indigo-300">[{citation.index}]</span>

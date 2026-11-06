@@ -23,7 +23,8 @@ import { useRef, useState } from "react";
 import Banner from "@/components/ui/Banner";
 import Button from "@/components/ui/Button";
 import DocumentRow from "@/components/DocumentRow";
-import { HINT } from "@/components/ui/tokens";
+import EmptyNote from "@/components/ui/EmptyNote";
+import { FOCUS, HINT } from "@/components/ui/tokens";
 import type { DocumentRecord } from "@/lib/api";
 import type { DocumentsState } from "@/lib/use-documents";
 
@@ -117,7 +118,7 @@ export default function DocumentsPanel({
                   : indexed.map((row) => row.document_id),
               )
             }
-            className="hover:text-zinc-300"
+            className={`hover:text-zinc-300 ${FOCUS}`}
           >
             {selectedIds.length === 0
               ? "select all"
@@ -129,14 +130,12 @@ export default function DocumentsPanel({
       </div>
 
       <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-        {state.loading && (
-          <li className="px-2 py-1.5 text-xs text-zinc-500">Loading your documents…</li>
-        )}
+        {state.loading && <EmptyNote>Loading your documents…</EmptyNote>}
 
         {!state.loading && state.documents.length === 0 && (
-          <li className="px-2 py-1.5 text-xs leading-relaxed text-zinc-500">
+          <EmptyNote>
             Nothing uploaded yet. This account has its own document space, so the list is yours alone.
-          </li>
+          </EmptyNote>
         )}
 
         {state.documents.map((document: DocumentRecord) => (

@@ -3,15 +3,18 @@ import { describe, expect, it } from "vitest";
 
 import Banner from "@/components/ui/Banner";
 import Button from "@/components/ui/Button";
+import EmptyNote from "@/components/ui/EmptyNote";
+import { CloseIcon } from "@/components/ui/icons";
 import Spinner from "@/components/ui/Spinner";
 import StatusPill from "@/components/ui/StatusPill";
 
 /**
- * __tests__/ui.test.tsx — The two rules the primitives exist to hold.
+ * __tests__/ui.test.tsx — The rules the primitives exist to hold.
  *
  * Not a screenshot test in disguise: these check the behaviour a hand-typed class list gets wrong
- * eventually, which is that a control's state is announced to assistive tech and that "waiting for the
- * server" never borrows the styling of "not available".
+ * eventually — that a control's state is announced to assistive tech, that "waiting for the server" never
+ * borrows the styling of "not available", and that a decorative glyph or an empty-list note is markup a
+ * validator accepts.
  */
 
 describe("Button", () => {
@@ -121,5 +124,31 @@ describe("StatusPill", () => {
 
     rerender(<StatusPill status="failed" />);
     expect(screen.getByText("failed")).toBeInTheDocument();
+  });
+});
+
+describe("icons", () => {
+  it("stays out of the way of a screen reader, because the button names itself", () => {
+    render(
+      <Button aria-label="Delete loan.pdf">
+        <CloseIcon />
+      </Button>,
+    );
+
+    expect(document.querySelector("svg")).toHaveAttribute("aria-hidden");
+  });
+});
+
+describe("EmptyNote", () => {
+  it("is a list item, so a list can hold it", () => {
+    render(
+      <ul>
+        <EmptyNote>Nothing uploaded yet.</EmptyNote>
+      </ul>,
+    );
+
+    const note = screen.getByText("Nothing uploaded yet.");
+    expect(note.tagName).toBe("LI");
+    expect(note.parentElement?.tagName).toBe("UL");
   });
 });

@@ -12,6 +12,7 @@
 
 import { useState } from "react";
 
+import { FOCUS } from "@/components/ui/tokens";
 import { traceLabel } from "@/lib/trace";
 
 export default function AgentTrace({ steps }: { steps: string[] }) {
@@ -22,7 +23,7 @@ export default function AgentTrace({ steps }: { steps: string[] }) {
       <button
         type="button"
         onClick={() => setShow((value) => !value)}
-        className="hover:text-zinc-300"
+        className={`hover:text-zinc-300 ${FOCUS}`}
         aria-expanded={show}
       >
         {show ? "Hide" : "Show"} how this was answered

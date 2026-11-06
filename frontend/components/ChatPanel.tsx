@@ -18,7 +18,7 @@ import Message from "./Message";
 import Banner from "@/components/ui/Banner";
 import Button from "@/components/ui/Button";
 import Spinner from "@/components/ui/Spinner";
-import { FIELD, HINT } from "@/components/ui/tokens";
+import { FIELD, FOCUS, HINT } from "@/components/ui/tokens";
 import { useChat } from "@/lib/use-chat";
 
 type Props = {
@@ -85,7 +85,7 @@ export default function ChatPanel({
           <button
             type="button"
             onClick={clearError}
-            className="shrink-0 underline decoration-red-800 hover:text-red-200"
+            className={`shrink-0 underline decoration-red-800 hover:text-red-200 ${FOCUS}`}
           >
             Dismiss
           </button>
