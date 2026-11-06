@@ -9,7 +9,12 @@
  *
  * The password never leaves this component's state. It is sent once, and on a failure it stays in the box
  * because a wrong *email* is the common mistake and making someone retype both is a worse guess than
- * letting them fix the one field that was actually wrong.
+ * letting them fix the one field that was actually wrong. The eye button changes only how the field is
+ * rendered, never what is in it, and it is a `type="button"` so revealing cannot submit the form.
+ *
+ * While a request is in flight the submit button keeps its normal colour and gains a spinner. Grey text on
+ * an indigo button reads as "this control is disabled because something is wrong"; the something that is
+ * actually true is that the server has not answered yet.
  *
  * What the backend refuses to say shapes what this can say. Sign-up answers one sentence whether or not the
  * address already exists, so there is no "that email is taken" branch to draw, and a failed sign-in answers
@@ -34,6 +39,7 @@ export default function AuthPanel() {
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState(() => storedEmail());
   const [password, setPassword] = useState("");
+  const [reveal, setReveal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** The server's own sentence, for the flows that succeed without minting a session. */
   const [notice, setNotice] = useState<string | null>(null);
@@ -94,8 +100,10 @@ export default function AuthPanel() {
   const label = "block text-[0.7rem] font-semibold uppercase tracking-widest text-zinc-500";
   const field =
     "w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none";
+  // A disabled submit keeps its normal colour: the grey variant read as "this control is broken", and the
+  // only thing that is actually true while `busy` is that the request has not come back yet.
   const button =
-    "w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600";
+    "flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed";
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-zinc-950 px-4 py-10 text-zinc-100">
@@ -152,29 +160,53 @@ export default function AuthPanel() {
             <label htmlFor="password" className={label}>
               Password
             </label>
-            <input
-              id="password"
-              type="password"
-              // current-password on sign in, new-password on sign up: a manager that offered the stored
-              // password on the create-account form would fill the field it is meant to replace.
-              autoComplete={mode === "signin" ? "current-password" : "new-password"}
-              required
-              minLength={mode === "signup" ? 12 : undefined}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? "auth-error" : undefined}
-              placeholder={mode === "signin" ? "Your password" : "At least 12 characters"}
-              className={field}
-            />
+            <div className="relative">
+              <input
+                id="password"
+                type={reveal ? "text" : "password"}
+                // current-password on sign in, new-password on sign up: a manager that offered the stored
+                // password on the create-account form would fill the field it is meant to replace.
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                required
+                minLength={mode === "signup" ? 12 : undefined}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "auth-error" : undefined}
+                placeholder={mode === "signin" ? "Your password" : "At least 12 characters"}
+                className={`${field} pr-11`}
+              />
+              <button
+                type="button"
+                onClick={() => setReveal((current) => !current)}
+                aria-label={reveal ? "Hide the password" : "Show the password"}
+                aria-pressed={reveal}
+                aria-controls="password"
+                className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-zinc-500 transition-colors hover:text-zinc-200 focus:outline-none focus-visible:text-indigo-400"
+              >
+                {reveal ? <EyeOff /> : <Eye />}
+              </button>
+            </div>
           </div>
 
-          <button type="submit" disabled={busy || email.trim().length === 0 || password.length === 0} className={button}>
-            {busy
-              ? "Working…"
-              : mode === "signin"
-                ? "Open workspace"
-                : "Create account and send the link"}
+          <button
+            type="submit"
+            disabled={busy || email.trim().length === 0 || password.length === 0}
+            aria-busy={busy}
+            className={button}
+          >
+            {busy && (
+              <svg
+                className="h-4 w-4 animate-spin"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden
+              >
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z" />
+              </svg>
+            )}
+            {mode === "signin" ? "Open workspace" : "Create account and send the link"}
           </button>
         </form>
 
@@ -210,9 +242,30 @@ export default function AuthPanel() {
         <p className="text-[0.7rem] leading-relaxed text-zinc-600">
           {mode === "signup"
             ? "Confirmation links work once and stay valid for a day. Your documents and conversations belong to your address, not to this browser, so signing in somewhere else finds them."
-            : "Your session token lasts a day; sign in again after that. If this is the first visit in a while, the demo server may take about a minute to wake up."}
+            : "Your session token lasts a day; sign in again after that. If this is the first visit in a while, the demo server may take a minute and a half to wake up."}
         </p>
       </div>
     </main>
+  );
+}
+
+/** Two strokes, so the icon can be recoloured by the button that owns it and needs no icon library. */
+function Eye() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOff() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M2 12s3.6-7 10-7c2 0 3.8.6 5.3 1.5" />
+      <path d="M18.6 6.9C20.7 8.5 22 12 22 12s-3.6 7-10 7c-2 0-3.8-.6-5.3-1.5" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+      <path d="m3 3 18 18" />
+    </svg>
   );
 }
