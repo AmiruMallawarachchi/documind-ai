@@ -195,7 +195,8 @@ a crash at boot beats a 500 buried inside a LangChain call stack mid-request.
 ```bash
 cd backend && pytest -q          # 341 tests, no network, no credentials
 ruff check app tests scripts
-cd ../frontend && npm run lint && npm run build
+cd ../frontend && npm test       # 8 component tests in jsdom, no browser, no backend
+npm run lint && npm run build
 ```
 
 Nothing in the suite calls a paid API: it mocks the model, never the pipeline. Layout and rationale in
