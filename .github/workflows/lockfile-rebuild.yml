@@ -1,0 +1,34 @@
+# Throwaway: rebuild frontend/package-lock.json on the same OS + Node as CI, because npm on the
+# development machine (Windows) prunes the hoisted @emnapi entries that `npm ci` on Linux requires.
+# The lock is downloaded from the artefact and committed; this file is deleted afterwards.
+name: Lockfile rebuild (Linux)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Reify the tree the way CI does
+        run: npm install --no-audit --no-fund
+
+      - name: Prove npm ci accepts the result
+        run: npm ci --dry-run
+
+      - name: Show what changed
+        run: git --no-pager diff --stat -- package-lock.json && grep -n '"node_modules/.*@emnapi[^"]*"' package-lock.json | head
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-lock
+          path: frontend/package-lock.json
