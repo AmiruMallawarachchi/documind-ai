@@ -11,11 +11,14 @@ Render's free instances drop outbound SMTP, so a deployed demo cannot deliver ma
 The security-relevant case is the failure one, and it is the same for both live transports: what gets
 written to the log when the provider refuses. A reply to a failed AUTH command, or a 401 body that echoes
 the key, can carry the credential — so the rule stays the one already applied to /api/health/deep, log
-the exception class, never its message.
+the exception class, never its message. The exception's *status*, where one exists, is logged: it is an
+integer, it cannot carry a credential, and it is the difference between "the mail is broken" and "the
+sender address is not verified".
 """
 
 from __future__ import annotations
 
+import io
 import json
 import smtplib
 import urllib.error
@@ -277,6 +280,42 @@ def test_a_brevo_refusal_is_mail_error_not_a_500(brevo_transport):
 
     with pytest.raises(mail.MailError):
         mail.send(to="you@example.com", subject="s", body="b")
+
+
+def test_a_refusal_response_body_is_never_read_into_the_log(brevo_transport, caplog):
+    """`HTTPError` carries the provider's error body on `fp`, and that body is exactly where Brevo puts
+    "unauthorized api-key <the key you just sent>". The branch logs `exc.code`, an integer, and never
+    touches the body — so a key sitting in the response stays out of the log stream."""
+    RecordingUrlopen.raises = urllib.error.HTTPError(
+        mail.BREVO_URL,
+        401,
+        "Unauthorized",
+        {},
+        io.BytesIO(b'{"code": "invalid_key", "message": "unauthorized api-key xbr-aaaaaaaabbbbcccc"}'),
+    )
+
+    with caplog.at_level("ERROR", logger="documind.mail"):
+        with pytest.raises(mail.MailError):
+            mail.send(to="you@example.com", subject="s", body="b")
+
+    assert "status=401" in caplog.text
+    assert "xbr-aaaaaaaabbbbcccc" not in caplog.text
+
+
+@pytest.mark.parametrize("status", [401, 400, 453])
+def test_the_provider_status_is_logged_because_it_is_the_whole_diagnosis(
+    brevo_transport, caplog, status
+):
+    """`error=HTTPError` is three unrelated faults wearing one name: a wrong key, a sender Brevo will not
+    mail from, an account not cleared to send. The status tells them apart, and without it the person
+    reading the dashboard log cannot say which of the three to go and fix."""
+    RecordingUrlopen.raises = urllib.error.HTTPError(mail.BREVO_URL, status, "Reason", {}, None)
+
+    with caplog.at_level("ERROR", logger="documind.mail"):
+        with pytest.raises(mail.MailError):
+            mail.send(to="you@example.com", subject="s", body="b")
+
+    assert f"status={status}" in caplog.text
 
 
 # ── failure ────────────────────────────────────────────────────────────────────

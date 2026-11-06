@@ -227,7 +227,9 @@ credential check, and then fails at connect time with a bare `OSError` after the
 visitor is still holding a `202` that promised a link. That is the whole argument for the third row. Both
 live transports are refused at boot without their credentials, both bound the socket with the same
 timeout, and both log a failure by exception **class** only: a 401 body from a mail provider can echo the
-key it refused, and this is the one module that holds it.
+key it refused, and this is the one module that holds it. The exception's numeric status, where it has one,
+is the single extra field that is printed — it cannot carry a secret, and it is what distinguishes a wrong
+key from an unverified sender.
 
 ---
 
