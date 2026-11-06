@@ -19,22 +19,12 @@
 
 import { useRef, useState } from "react";
 
-import type { DocumentRecord, DocumentStatus } from "@/lib/api";
+import Banner from "@/components/ui/Banner";
+import Button from "@/components/ui/Button";
+import StatusPill from "@/components/ui/StatusPill";
+import { HINT } from "@/components/ui/tokens";
+import type { DocumentRecord } from "@/lib/api";
 import type { DocumentsState } from "@/lib/use-documents";
-
-const STATUS_STYLE: Record<DocumentStatus, string> = {
-  uploading: "bg-amber-500/15 text-amber-300",
-  parsing: "bg-amber-500/15 text-amber-300",
-  indexed: "bg-emerald-500/15 text-emerald-300",
-  failed: "bg-red-500/15 text-red-300",
-};
-
-const STATUS_TEXT: Record<DocumentStatus, string> = {
-  uploading: "queued",
-  parsing: "indexing",
-  indexed: "ready",
-  failed: "failed",
-};
 
 const ACCEPTED = ".pdf,.docx,.txt";
 
@@ -101,29 +91,20 @@ export default function DocumentsPanel({
         aria-label="Choose files to upload"
       />
       <div className="space-y-1.5">
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
+        <Button
+          block
+          busy={state.uploading}
           disabled={state.uploading}
-          aria-busy={state.uploading}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed"
+          onClick={() => inputRef.current?.click()}
         >
-          {state.uploading && (
-            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z" />
-            </svg>
-          )}
           Upload documents
-        </button>
-        <p className="text-[0.7rem] leading-snug text-zinc-600">
+        </Button>
+        <p className={HINT}>
           PDF, DOCX, TXT · up to 10 MB each · drop files anywhere in this panel
         </p>
       </div>
 
-      {state.error && (
-        <p className="rounded-lg bg-red-950/50 px-3 py-2 text-xs text-red-300">{state.error}</p>
-      )}
+      {state.error && <Banner>{state.error}</Banner>}
 
       <div className="flex items-center justify-between text-[0.7rem] text-zinc-500">
         <span>
@@ -131,6 +112,8 @@ export default function DocumentsPanel({
           {pending.length > 0 && ` · ${pending.length} indexing`}
         </span>
         {indexed.length > 0 && (
+          // Not a `<Button>`: this is a word in the caption row, not a control, and the variant's padding
+          // would push it off the right edge the row is flush to.
           <button
             type="button"
             onClick={() =>
@@ -186,11 +169,7 @@ export default function DocumentsPanel({
                     {document.filename}
                   </p>
                   <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.7rem] text-zinc-500">
-                    <span
-                      className={`rounded px-1.5 py-0.5 font-medium ${STATUS_STYLE[document.status]}`}
-                    >
-                      {STATUS_TEXT[document.status]}
-                    </span>
+                    <StatusPill status={document.status} />
                     {isReady && (
                       <span>
                         {document.chunk_count} chunks
@@ -208,34 +187,31 @@ export default function DocumentsPanel({
                 </div>
 
                 {confirming === document.document_id ? (
-                  <div className="flex shrink-0 gap-1 text-[0.7rem]">
-                    <button
-                      type="button"
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      variant="danger"
+                      size="xs"
                       onClick={() => {
                         void state.remove(document.document_id);
                         setConfirming(null);
                       }}
-                      className="rounded bg-red-600/80 px-2 py-1 font-medium text-white hover:bg-red-600"
                     >
                       Delete
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirming(null)}
-                      className="rounded border border-zinc-700 px-2 py-1 text-zinc-300 hover:bg-zinc-800"
-                    >
+                    </Button>
+                    <Button variant="outline" size="xs" onClick={() => setConfirming(null)}>
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 ) : (
-                  <button
-                    type="button"
+                  <Button
+                    variant="icon"
+                    size="xs"
                     onClick={() => setConfirming(document.document_id)}
                     aria-label={`Delete ${document.filename}`}
-                    className="shrink-0 rounded p-1 text-zinc-600 transition-colors hover:bg-zinc-800 hover:text-red-400"
+                    className="shrink-0"
                   >
                     ✕
-                  </button>
+                  </Button>
                 )}
               </div>
             </li>
@@ -243,7 +219,7 @@ export default function DocumentsPanel({
         })}
       </ul>
 
-      <p className="text-[0.7rem] leading-snug text-zinc-600">
+      <p className={HINT}>
         {selectedIds.length === 0
           ? "Questions search every indexed document."
           : `Questions search ${selectedIds.length} selected ${selectedIds.length === 1 ? "document" : "documents"}.`}

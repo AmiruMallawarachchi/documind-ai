@@ -14,6 +14,7 @@
 
 import { useState } from "react";
 
+import Banner from "@/components/ui/Banner";
 import type { Citation } from "@/lib/api";
 import type { UiMessage } from "@/lib/use-chat";
 
@@ -111,11 +112,7 @@ export default function Message({ message }: { message: UiMessage }) {
           )}
         </div>
 
-        {message.error && (
-          <p className="rounded-lg bg-red-950/50 px-3 py-2 text-xs text-red-300">
-            {message.error}
-          </p>
-        )}
+        {message.error && <Banner>{message.error}</Banner>}
 
         {message.citations.length > 0 && (
           <ul className="space-y-1.5">

@@ -21,6 +21,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AuthPanel from "@/components/AuthPanel";
 import ChatPanel from "@/components/ChatPanel";
 import DocumentsPanel from "@/components/DocumentsPanel";
+import Button from "@/components/ui/Button";
+import { SECTION_TITLE } from "@/components/ui/tokens";
 import { API_URL, type ConversationSummary, listConversations } from "@/lib/api";
 import { useDocuments } from "@/lib/use-documents";
 import { useSession } from "@/lib/use-session";
@@ -111,21 +113,21 @@ function Workspace({ ownerId, onSignOut }: { ownerId: string; onSignOut: () => v
             Multi-agent document Q&amp;A · answers verified against your sources
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onSignOut}
-          className="hidden rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200 lg:block"
-        >
-          Sign out
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowSidebar((value) => !value)}
-          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 lg:hidden"
-          aria-expanded={showSidebar}
-        >
-          {showSidebar ? "Chat" : "Documents"}
-        </button>
+        <div className="hidden lg:block">
+          <Button variant="outline" size="sm" onClick={onSignOut}>
+            Sign out
+          </Button>
+        </div>
+        <div className="lg:hidden">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSidebar((value) => !value)}
+            aria-expanded={showSidebar}
+          >
+            {showSidebar ? "Chat" : "Documents"}
+          </Button>
+        </div>
       </header>
 
       <div className="grid min-h-0 flex-1 lg:grid-cols-[20rem_1fr]">
@@ -152,16 +154,15 @@ function Workspace({ ownerId, onSignOut }: { ownerId: string; onSignOut: () => v
 
             <Section title="History">
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
+                <Button
+                  size="xs"
                   onClick={() => {
                     startThread(null);
                     setShowSidebar(false);
                   }}
-                  className="rounded-lg bg-indigo-600/90 px-2.5 py-1 text-[0.7rem] font-semibold text-white transition-colors hover:bg-indigo-500"
                 >
                   New chat
-                </button>
+                </Button>
                 <span className="text-[0.7rem] text-zinc-600">
                   {conversations.length} saved
                 </span>
@@ -199,13 +200,11 @@ function Workspace({ ownerId, onSignOut }: { ownerId: string; onSignOut: () => v
             <p title={ownerId}>
               API: {API_URL.replace(/^https?:\/\//, "")} · owner {ownerId.slice(0, 8)}
             </p>
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="text-zinc-600 transition-colors hover:text-zinc-300 lg:hidden"
-            >
-              Sign out
-            </button>
+            <div className="lg:hidden">
+              <Button variant="ghost" size="xs" onClick={onSignOut}>
+                Sign out
+              </Button>
+            </div>
           </div>
         </aside>
 
@@ -232,9 +231,7 @@ function Section({
 }) {
   return (
     <section className="min-h-0">
-      <h2 className="mb-2 text-[0.7rem] font-semibold uppercase tracking-widest text-zinc-500">
-        {title}
-      </h2>
+      <h2 className={SECTION_TITLE}>{title}</h2>
       {children}
     </section>
   );

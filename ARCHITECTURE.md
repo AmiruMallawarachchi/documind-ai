@@ -276,6 +276,19 @@ Next.js 16 App Router, two routes (`/` and `/verify`), no server rendering of us
   the email is, because prefilling it is what makes "sign in again tomorrow" one keystroke and it is not a
   credential. `/verify` is the one page that reads the query string, so it renders inside a `<Suspense>`
   boundary and strips the token from the URL once spent.
+- `components/ui/` is the shared layer: `Button`, `Banner`, `Spinner`, `StatusPill`, and `tokens.ts` (the
+  class strings for a form field, a field label, a hint, and a section heading). Panels own behaviour and
+  layout; they do not own spelling. Before this existed, twenty buttons had drifted into twenty
+  hand-typed strings — the upload button kept its indigo when disabled while the sign-in button greyed out,
+  and the two "Sign out" controls were the same action styled two ways — and six alert banners were one
+  shape typed six ways. `tokens.ts` is deliberately small: a string used by exactly one component stays in
+  that component.
+- The variants in `components/ui/Button.tsx` carry their hover and disabled classes inside the variant, and
+  a caller must not try to replace them through `className`. Tailwind emits `hover:text-zinc-200` and
+  `hover:text-red-300` in the same specificity band, so which one wins depends on the order Tailwind happens
+  to generate them in, not on the order they appear in the attribute. That is why `outlineDanger` is a
+  variant rather than `outline` plus a red hover, and why the responsive `hidden lg:block` on the header's
+  two buttons sits on a wrapping `<div>` instead of on the button.
 - `lib/api.ts` is the only file that talks to the document API: auth headers, error unwrapping, and manual
   SSE decoding live there once rather than per component. `lib/session.ts` posts to `/api/auth/*` itself,
   because a sign-in has no token to attach yet and its failures are answers rather than errors.
@@ -317,11 +330,13 @@ a rule that only a test can hold: `stream_text` must never restart a stream that
 words, because the retry appends a second answer mid-sentence — `test_llm_retry.py` caught exactly that
 defect while it was still a docstring promise rather than a behaviour.
 
-The frontend has its own suite: `cd frontend && npm test` — **8 component tests** under vitest and jsdom,
+The frontend has its own suite: `cd frontend && npm test` — **19 component tests** under vitest and jsdom,
 no browser and no backend. It exists because a broken `[1]` citation marker renders as perfectly readable
 prose with a stray bracket in it. The type check passed, the lint passed, the build passed, and clicking
 through the app still showed a sentence — only a test that asserts what the answer bubble actually says
-catches that class of defect.
+catches that class of defect. Eight of the nineteen are that answer-rendering case; the other eleven hold
+the rules `components/ui/` exists to make unbreakable — that a busy control keeps its colour, that a banner
+is a `div` so it can carry a button, and that a status is a word as well as a colour.
 
 ---
 

@@ -15,6 +15,10 @@
 import { useEffect, useRef, useState } from "react";
 
 import Message from "./Message";
+import Banner from "@/components/ui/Banner";
+import Button from "@/components/ui/Button";
+import Spinner from "@/components/ui/Spinner";
+import { FIELD, HINT } from "@/components/ui/tokens";
 import { useChat } from "@/lib/use-chat";
 
 type Props = {
@@ -65,12 +69,8 @@ export default function ChatPanel({
         ))}
 
         {stage && (
-          <p
-            className="flex items-center gap-2 text-xs text-zinc-400"
-            role="status"
-            aria-live="polite"
-          >
-            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+          <p className="flex items-center gap-2 text-xs text-zinc-400" role="status" aria-live="polite">
+            <Spinner className="h-3.5 w-3.5 text-indigo-400" />
             {stage}
           </p>
         )}
@@ -78,8 +78,10 @@ export default function ChatPanel({
       </div>
 
       {error && (
-        <div className="mx-4 mb-2 flex items-start justify-between gap-3 rounded-lg bg-red-950/50 px-3 py-2 text-xs text-red-300 sm:mx-6">
+        <Banner className="mx-4 mb-2 flex items-start justify-between gap-3 sm:mx-6">
           <p>{error}</p>
+          {/* Not a `Button`: this is a link-shaped correction inside the banner, and its hover colour is
+              the banner's own red. Putting it in the primitive would need a variant for one control. */}
           <button
             type="button"
             onClick={clearError}
@@ -87,7 +89,7 @@ export default function ChatPanel({
           >
             Dismiss
           </button>
-        </div>
+        </Banner>
       )}
 
       <form
@@ -118,27 +120,19 @@ export default function ChatPanel({
             }
             disabled={indexedCount === 0}
             aria-label="Question"
-            className="max-h-40 min-h-[2.75rem] flex-1 resize-y rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            className={`${FIELD} max-h-40 min-h-[2.75rem] flex-1 resize-y`}
           />
           {busy ? (
-            <button
-              type="button"
-              onClick={stop}
-              className="h-11 rounded-xl border border-zinc-700 px-4 text-sm font-medium text-zinc-200 transition-colors hover:border-red-800 hover:text-red-300"
-            >
+            <Button variant="outlineDanger" className="h-11" onClick={stop}>
               Stop
-            </button>
+            </Button>
           ) : (
-            <button
-              type="submit"
-              disabled={disabled || draft.trim().length === 0}
-              className="h-11 rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600"
-            >
+            <Button type="submit" className="h-11" disabled={disabled || draft.trim().length === 0}>
               Ask
-            </button>
+            </Button>
           )}
         </div>
-        <p className="mt-1.5 text-[0.7rem] text-zinc-600">
+        <p className={`mt-1.5 ${HINT}`}>
           Enter to send · Shift+Enter for a new line · Answers cite the passage they came from
         </p>
       </form>
