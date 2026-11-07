@@ -287,6 +287,14 @@ key it refused, and this is the one module that holds it. The exception's numeri
 is the single extra field that is printed — it cannot carry a secret, and it is what distinguishes a wrong
 key from an unverified sender.
 
+**Preflight.** The browser is the only client that asks permission before it sends, and the server's answer
+is a named list of methods rather than `*`. That difference is invisible to a test suite that calls routes
+directly, which is why `tests/test_cors.py` preflights every verb `frontend/lib/api.ts` actually uses — the
+gap it exists to catch is real: `PATCH` joined the routes in #35 and never joined this list, so a rename
+passed every backend test and returned `400 Disallowed CORS method` in a browser tab the first time the
+history row tried to send it. A `PUT` preflight still gets `400`, which is the test that keeps the list a
+list.
+
 ---
 
 ## 6. Observability
@@ -375,7 +383,7 @@ Next.js 16 App Router, two routes (`/` and `/verify`), no server rendering of us
 
 ## 8. Testing strategy
 
-`cd backend && pytest` — **366 tests, no network, no credentials.**
+`cd backend && pytest` — **371 tests, no network, no credentials.**
 
 | File | Covers | Why it is separate |
 |---|---|---|
@@ -386,6 +394,7 @@ Next.js 16 App Router, two routes (`/` and `/verify`), no server rendering of us
 | `test_llm_retry.py` | which failures retry, and the mid-stream rule | these tests need a model that *fails* |
 | `test_agents.py` | the graph: routing, the revision cycle, zero-hit short-circuit | one integration test per edge |
 | `test_api.py` | HTTP contract, SSE frames, uploads, conversations, share links | 2–3 smoke paths, mocked LLM |
+| `test_cors.py` | the preflight answer for every verb `frontend/lib/api.ts` uses | TestClient calls routes directly and never asks permission first; only a preflight catches a verb the browser is not allowed to send |
 | `test_auth.py` | tokens, owner isolation, rate limits, request ids | production mode flipped per test |
 | `test_password.py` | the policy, `blind_verify`, the rehash predicate | those rules live in the hashing module, so they are tested there and not through a route |
 | `test_user_store.py` | row shape, normalisation, the unique email index | a duplicate signup is only visible as an index violation |
