@@ -379,6 +379,87 @@ def test_conversation_is_not_readable_across_owners(client, fake_metadata, fake_
     assert client.get(f"/api/conversations/{stolen}", headers=OWNER_B).status_code == 404
 
 
+def start_thread(client, fake_vectors, question="What are the terms?") -> str:
+    """One indexed document and one answered question, which is what makes a real thread id."""
+    upload(client, data=build_pdf(["Terms."]))
+    fake_vectors["canned_results"] = [make_chunk()]
+    events = dict(parse_sse(client.post("/api/chat", headers=OWNER_A, json={"question": question})))
+    return events["meta"]["conversation_id"]
+
+
+def test_a_thread_can_be_renamed_and_pinned(client, fake_metadata, fake_vectors, fake_llm):
+    conversation_id = start_thread(client, fake_vectors)
+
+    response = client.patch(
+        f"/api/conversations/{conversation_id}",
+        headers=OWNER_A,
+        json={"title": "Vendor agreement terms", "pinned": True},
+    )
+    assert response.status_code == 200
+    assert response.json()["title"] == "Vendor agreement terms"
+    assert response.json()["pinned"] is True
+
+    listed = client.get("/api/conversations", headers=OWNER_A).json()
+    assert [row["title"] for row in listed] == ["Vendor agreement terms"]
+    assert listed[0]["pinned"] is True
+
+
+def test_a_thread_starts_unpinned(client, fake_metadata, fake_vectors, fake_llm):
+    """Nothing in the corpus was written with a `pinned` key, so the list must not invent one."""
+    conversation_id = start_thread(client, fake_vectors)
+
+    assert client.get(f"/api/conversations/{conversation_id}", headers=OWNER_A).json()[
+        "conversation"
+    ]["pinned"] is False
+
+
+def test_a_title_that_says_nothing_is_refused(client, fake_metadata, fake_vectors, fake_llm):
+    """`{}` means a caller lost its payload, and a whitespace title is the same accident."""
+    conversation_id = start_thread(client, fake_vectors)
+
+    assert client.patch(
+        f"/api/conversations/{conversation_id}", headers=OWNER_A, json={}
+    ).status_code == 422
+    assert client.patch(
+        f"/api/conversations/{conversation_id}", headers=OWNER_A, json={"title": "   "}
+    ).status_code == 422
+    assert client.get(f"/api/conversations/{conversation_id}", headers=OWNER_A).json()[
+        "conversation"
+    ]["title"] == "What are the terms?"
+
+
+def test_deleting_a_thread_takes_the_whole_exchange(client, fake_metadata, fake_vectors, fake_llm):
+    conversation_id = start_thread(client, fake_vectors)
+    assert fake_metadata.messages, "the thread under test must actually have rows to lose"
+
+    assert client.delete(f"/api/conversations/{conversation_id}", headers=OWNER_A).status_code == 204
+
+    assert client.get("/api/conversations", headers=OWNER_A).json() == []
+    assert fake_metadata.messages == []
+    assert client.get(f"/api/conversations/{conversation_id}", headers=OWNER_A).status_code == 404
+
+
+def test_a_thread_cannot_be_renamed_or_deleted_by_another_owner(client, fake_metadata, fake_vectors, fake_llm):
+    """The id is a Mongo ObjectId and the owner header is the only other thing the request carries."""
+    conversation_id = start_thread(client, fake_vectors)
+
+    assert client.patch(
+        f"/api/conversations/{conversation_id}", headers=OWNER_B, json={"title": "Stolen"}
+    ).status_code == 404
+    assert client.delete(f"/api/conversations/{conversation_id}", headers=OWNER_B).status_code == 404
+
+    assert client.get(f"/api/conversations/{conversation_id}", headers=OWNER_A).json()[
+        "conversation"
+    ]["title"] == "What are the terms?"
+
+
+def test_an_unknown_thread_cannot_be_patched_or_deleted(client, fake_metadata):
+    assert client.patch(
+        "/api/conversations/conv-does-not-exist", headers=OWNER_A, json={"pinned": True}
+    ).status_code == 404
+    assert client.delete("/api/conversations/conv-does-not-exist", headers=OWNER_A).status_code == 404
+
+
 def test_chat_validates_document_scope(client, fake_metadata):
     """A stale or unindexed id must be refused by name, not silently dropped from the search."""
     upload(client, data=build_pdf(["Indexed doc."]))

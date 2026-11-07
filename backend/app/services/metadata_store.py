@@ -252,6 +252,38 @@ def list_conversations(owner_id: str, limit: int = 50) -> list[dict[str, Any]]:
     return list(cursor)
 
 
+def update_conversation(owner_id: str, conversation_id: str, **fields: Any) -> bool:
+    """Rename or pin a thread. Returns False when there is no such thread for this owner.
+
+    `updated_at` is deliberately not touched. The history list is ordered by it, so a rename would
+    fling a six-month-old thread to the top of the sidebar and a pin would do it twice over — the user
+    asked to label the thread, not to resume it. Only `save_message` moves a thread up the list.
+    """
+    if not fields:
+        return False
+    result = _database()[_CONVERSATIONS].update_one(
+        {"conversation_id": conversation_id, "owner_id": owner_id},
+        {"$set": fields},
+    )
+    return result.matched_count > 0
+
+
+def delete_conversation(owner_id: str, conversation_id: str) -> bool:
+    """Remove a thread and every message in it. Returns False when there is no such thread.
+
+    The messages go first. If the second delete fails, the user is left with a thread that renders
+    empty and can be deleted again; if the order were reversed and the first failed, the rows would
+    outlive their header as invisible orphans that nothing can list, count or clean up.
+    """
+    _database()[_MESSAGES].delete_many(
+        {"conversation_id": conversation_id, "owner_id": owner_id}
+    )
+    result = _database()[_CONVERSATIONS].delete_one(
+        {"conversation_id": conversation_id, "owner_id": owner_id}
+    )
+    return result.deleted_count > 0
+
+
 def save_message(
     *,
     owner_id: str,

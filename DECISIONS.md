@@ -87,6 +87,16 @@ what was given up.
 | `Settings` refuses to boot on an unrecognised env key (pydantic-settings' `extra=forbid`) | A typo'd variable name is otherwise a silent misconfiguration, and the mail transport in particular has a fallback that would hide it | Retiring a setting is a two-step deploy: delete the dashboard key, then the field — in that order |
 | The signup bucket is per address over an **hour** (`window_seconds=3600`), where every other limit is a minute | The budgets that accumulate are rows in a 512 MB Atlas cluster and mails sent through one Gmail account, which punishes a script that hits its quota by the minute; a minute-long window still permits hundreds of accounts per hour | Someone who mistypes their address and immediately wants the link again spends a second slot of a scarce bucket |
 
+## Conversations
+
+| Decision | Why | What it cost |
+|---|---|---|
+| A thread mutation answers `404`, not `403`, for an id that belongs to somebody else | The id is a Mongo ObjectId — sequential, and guessable at about one per request. A `403` says *that thread exists and is not yours*, which is exactly the oracle the owner-scoped filters were built to remove, and it would be the only difference a caller could exploit | The API cannot tell its own user that a thread was deleted from under them, so a stale tab shows "not found" for a thread it just had |
+| Renaming and pinning never touch `updated_at` | `updated_at` is the history list's sort key, and it means *last message*. A label edit that bumped it would fling a six-month-old thread to the top of the sidebar for someone who only wanted to call it something else, and pinning would do it twice over in the same click | Two write paths with different timestamp rules (`update_conversation` and `save_message`), and one test per rule so neither is "fixed" back into the other |
+| `pinned` is read as `row.get("pinned", False)` rather than migrated | Every thread already in Atlas lacks the key, an absent flag and a false flag are the same statement, and a backfill script against a shared production cluster is a way to lose data while adding a boolean | The default lives in three places (service read, response model, fake store) and each has to agree |
+| Delete removes the messages first, then the header | If the header went first and the message delete failed, the rows would outlive their thread as orphans nothing can list, count or clean up in a 512 MB cluster. The other order leaves an empty thread the user can simply delete again | Two deletes with no transaction between them, so the intermediate state is reachable and the UI must not crash on a thread with no messages |
+| One `ConversationResponse` projection function, used by the list and the detail view | The two endpoints spelled the same projection separately, which is how `pinned` would have appeared in one and not the other — and the frontend reads the list, so the bug would have been invisible until someone opened a thread | A helper that takes a raw Mongo row, so the shape it expects is documented by its callers rather than by a type |
+
 ## Frontend
 
 | Decision | Why | What it cost |

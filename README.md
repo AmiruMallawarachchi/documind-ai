@@ -127,8 +127,10 @@ graph LR
 | `GET` | `/api/documents/status/summary` | session | Counts for the sidebar badge |
 | `GET` / `DELETE` | `/api/documents/{id}` | session | Delete removes vectors **and** metadata |
 | `POST` | `/api/chat` | session | SSE: `meta`, `citations`, `status`, `token`, `done`, `error` |
-| `GET` | `/api/conversations` | session | Thread list, `updated_at` desc |
+| `GET` | `/api/conversations` | session | Thread list, `updated_at` desc, pinned first in the UI |
 | `GET` | `/api/conversations/{id}` | session | Messages with citations and the agent trace |
+| `PATCH` | `/api/conversations/{id}` | session | Rename and/or pin; a foreign or unknown id is `404`, an empty patch is `422` |
+| `DELETE` | `/api/conversations/{id}` | session | `204`, and the thread's messages go with it |
 
 `Authorization: Bearer <token>` is required in production. Outside production an `X-Demo-Key` header is
 accepted so local work does not need a login — that fallback is a demo convenience, not an identity
@@ -193,7 +195,7 @@ a crash at boot beats a 500 buried inside a LangChain call stack mid-request.
 ## Tests
 
 ```bash
-cd backend && pytest -q          # 341 tests, no network, no credentials
+cd backend && pytest -q          # 352 tests, no network, no credentials
 ruff check app tests scripts
 cd ../frontend && npm test       # 42 frontend tests in jsdom, no browser, no backend
 npm run lint && npm run build
@@ -299,7 +301,7 @@ Stated plainly, because a list of limits is the most honest part of a portfolio 
 | 3 · Multi-agent | router → retrieval → synthesis → critique, bounded revision loop | ✅ |
 | 4 · Frontend | Streaming chat UI, citations, upload + document scope, history | ✅ |
 | 5 · Hardening | JWT sessions, rate limiting, retry/backoff, JSON logs, upload validation | ✅ |
-| 6 · Testing | 341 tests: unit, integration, smoke, query-shape assertions | ✅ |
+| 6 · Testing | 352 tests: unit, integration, smoke, query-shape assertions | ✅ |
 | 7 · Deploy + docs | Render + Vercel, this README, `ARCHITECTURE.md` | ✅ live |
 | 8 · Portfolio polish (stretch) | Demo video, write-up for Amiru AI Lab / HuggingFace | ⬜ |
 
