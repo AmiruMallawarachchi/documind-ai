@@ -176,6 +176,38 @@ class FakeMetadataStore:
     def get_conversation_messages(self, owner_id, conversation_id, limit=200):
         return self._thread(owner_id, conversation_id)[:limit]
 
+    def create_or_get_share(self, owner_id, conversation_id):
+        record = self.get_conversation(owner_id, conversation_id)
+        if record is None:
+            return None
+        if not record.get("share_id"):
+            self._counter += 1
+            record["share_id"] = f"tok-{self._counter}"
+        return record["share_id"]
+
+    def revoke_share(self, owner_id, conversation_id):
+        record = self.get_conversation(owner_id, conversation_id)
+        if record is None:
+            return False
+        record.pop("share_id", None)
+        return True
+
+    def get_shared_conversation(self, share_id):
+        """Matched on the token alone, exactly like the real query — no owner in sight."""
+        return next((row for row in self.conversations.values() if row.get("share_id") == share_id), None)
+
+    def get_shared_messages(self, conversation_id, limit=200):
+        """The projection, honoured: role, content, timestamp.
+
+        The real service asks Mongo for three fields; a fake that returned the whole stored message
+        would let a citation leak through the public route with the test suite still green.
+        """
+        rows = [m for m in self.messages if m["conversation_id"] == conversation_id][:limit]
+        return [
+            {field: m[field] for field in ("role", "content", "created_at") if field in m}
+            for m in rows
+        ]
+
     def ping(self):
         return True
 
@@ -313,6 +345,10 @@ def fake_metadata(monkeypatch) -> FakeMetadataStore:
         "save_message",
         "get_recent_messages",
         "get_conversation_messages",
+        "create_or_get_share",
+        "revoke_share",
+        "get_shared_conversation",
+        "get_shared_messages",
         "ping",
     ]:
         monkeypatch.setattr(metadata_store, name, getattr(fake, name))

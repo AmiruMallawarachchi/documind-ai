@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     chat_requests_per_minute: int = Field(default=10, description="Max /api/chat calls per owner per minute.")
     upload_requests_per_minute: int = Field(default=6, description="Max /api/upload calls per owner per minute.")
     login_requests_per_minute: int = Field(default=5, description="Max /api/auth calls per address per minute.")
+    shared_requests_per_minute: int = Field(
+        default=30,
+        description="Max GET /api/shared/{token} calls per address per minute. The route is unauthenticated, "
+        "so this is the only thing standing between one visitor and a scan of the token space.",
+    )
     # Signup gets an hour-long window instead: the cost it protects against is not a fast script but a slow
     # one filling the free Atlas cluster with unverified accounts, and one visitor legitimately needs a
     # second chance when the first email lands in spam.

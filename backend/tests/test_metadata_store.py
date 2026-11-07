@@ -94,15 +94,15 @@ class FakeCollection:
             self._name,
         )
 
-    def find_one(self, flt):
-        self._db.log.append((f"{self._name}.find_one", flt))
+    def find_one(self, flt, projection=None):
+        self._db.log.append((f"{self._name}.find_one", flt, projection))
         for row in self._db.rows.get(self._name, []):
             if _matches(row, flt):
                 return row
         return None
 
     def create_index(self, *args, **kwargs):
-        self._db.log.append((f"{self._name}.create_index", args))
+        self._db.log.append((f"{self._name}.create_index", args, kwargs))
 
 
 class FakeDB:
@@ -437,6 +437,73 @@ def test_a_thread_list_is_scoped_and_newest_first(db):
     assert ("conversations.limit", 3) in db.log
 
 
+# ── share links ────────────────────────────────────────────────────────────────
+
+
+def test_minting_a_share_writes_the_token_and_nothing_else(db):
+    """A share must not move `updated_at`: the sidebar sorts on it and means *last message*, so minting
+    a link would fling a week-old thread to the top of the history list."""
+    db.rows["conversations"] = [
+        {"conversation_id": "conv-1", "owner_id": "owner-a", "title": "Terms", "updated_at": datetime(2026, 11, 1, tzinfo=timezone.utc)}
+    ]
+
+    token = metadata_store.create_or_get_share("owner-a", "conv-1")
+
+    write = logged(db, "conversations.update_one")[-1]
+    assert write[1] == {"conversation_id": "conv-1", "owner_id": "owner-a"}
+    assert set(write[2]["$set"]) == {"share_id"}
+    assert token == write[2]["$set"]["share_id"]
+    assert len(token) >= 20
+
+
+def test_a_second_mint_returns_the_live_token_without_writing(db):
+    """Two tokens for one thread means the first link stays readable with no way left to revoke it."""
+    db.rows["conversations"] = [
+        {"conversation_id": "conv-1", "owner_id": "owner-a", "share_id": "already-live"}
+    ]
+
+    assert metadata_store.create_or_get_share("owner-a", "conv-1") == "already-live"
+    assert not logged(db, "conversations.update_one")
+
+
+def test_a_share_cannot_be_minted_for_another_owner(db):
+    """`find_one` really filters in this fake, so a foreign owner gets None rather than a token."""
+    db.rows["conversations"] = [{"conversation_id": "conv-1", "owner_id": "owner-a"}]
+
+    assert metadata_store.create_or_get_share("owner-b", "conv-1") is None
+    assert not logged(db, "conversations.update_one")
+
+
+def test_revoking_unsets_the_token_rather_than_nulling_it(db):
+    """A null counts as a value against a unique index, so the second revoked thread would fail as a
+    duplicate key. `$unset` leaves the row out of the partial index entirely."""
+    metadata_store.revoke_share("owner-a", "conv-1")
+
+    write = logged(db, "conversations.update_one")[-1]
+    assert write[1] == {"conversation_id": "conv-1", "owner_id": "owner-a"}
+    assert write[2] == {"$unset": {"share_id": ""}}
+
+
+def test_the_public_lookup_is_keyed_on_the_token_alone(db):
+    """The one read in this service with no owner in the filter, and the only one that may be: the
+    caller proved nothing about who they are, and the 128-bit token is the entire authority."""
+    metadata_store.get_shared_conversation("abcdef")
+
+    read = logged(db, "conversations.find_one")[-1]
+    assert read[1] == {"share_id": "abcdef"}
+    assert "owner_id" not in read[1]
+
+
+def test_the_public_read_asks_for_three_fields(db):
+    """The projection is what makes a shared page safe against the messages collection's next field, so
+    it has to be the query's, not a filter someone remembers to apply in Python afterwards."""
+    metadata_store.get_shared_messages("conv-1")
+
+    assert logged(db, "messages.find")[-1][1] == {"conversation_id": "conv-1"}
+    assert db.projections["messages"] == {"_id": 0, "role": 1, "content": 1, "created_at": 1}
+    assert ("messages.sort", "created_at", 1) in db.log
+
+
 # ── degradation ────────────────────────────────────────────────────────────────
 
 
@@ -463,18 +530,26 @@ def test_the_hot_paths_ask_for_the_owner_scoped_indexes(db):
     the thread key. Without them, every list and every thread load is a collection scan.
 
     The two account indexes are asserted here too because this pass is the only cold-start index site for
-    the database; test_user_store checks what the account service does with them."""
+    the database; test_user_store checks what the account service does with them. The share index is the
+    one unique index that must be partial, because a thread without a link has no token to index."""
     metadata_store._ensure_indexes(db)
 
     specs = [str(entry[1][0]) for entry in db.log if entry[0].endswith("create_index")]
+    options = {
+        str(entry[1][0]): entry[2] for entry in db.log if entry[0].endswith("create_index")
+    }
 
-    assert len(specs) == 7
+    assert len(specs) == 8
     assert any("owner_id" in s and "uploaded_at" in s for s in specs)
     assert any("owner_id" in s and "updated_at" in s for s in specs)
     assert any("conversation_id" in s and "created_at" in s for s in specs)
     assert any(s == "document_id" for s in specs)
     assert any(s == "email" for s in specs)
     assert any(s == "user_id" for s in specs)
+    assert options["share_id"] == {
+        "unique": True,
+        "partialFilterExpression": {"share_id": {"$type": "string"}},
+    }
 
 
 def test_a_failed_ping_reports_down_instead_of_raising(monkeypatch):

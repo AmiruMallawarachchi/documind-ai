@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 
 from app.agents import graph
-from app.core.deps import chat_rate_limit, current_owner_id
+from app.core.deps import chat_rate_limit, current_owner_id, shared_rate_limit
 from app.models.chat import (
     ChatRequest,
     ConversationDetail,
@@ -40,6 +40,9 @@ from app.models.chat import (
     EVENT_STATUS,
     EVENT_TOKEN,
     MessageResponse,
+    SharedConversation,
+    SharedMessage,
+    ShareResponse,
 )
 from app.services import metadata_store, prompts
 
@@ -317,6 +320,7 @@ def _conversation_response(row: dict) -> ConversationResponse:
         title=str(row.get("title", "New chat")),
         updated_at=metadata_store.to_iso(row.get("updated_at")),
         pinned=bool(row.get("pinned", False)),
+        shared=bool(row.get("share_id")),
     )
 
 
@@ -383,6 +387,47 @@ async def delete_conversation(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/conversations/{conversation_id}/share", response_model=ShareResponse)
+async def share_conversation(
+    conversation_id: str,
+    owner_id: str = Depends(current_owner_id),
+) -> ShareResponse:
+    """Mint or return this thread's one public link.
+
+    Idempotent because the button gets pressed twice. A second mint would replace the token, and the
+    first link — already pasted into a chat somewhere — would keep serving the thread with no way left to
+    revoke it, since the row now holds only the second.
+
+    The token is the whole credential, so it is returned once here rather than carried in the
+    conversation list that the client keeps in memory and a log line could print.
+    """
+    token = metadata_store.create_or_get_share(owner_id, conversation_id)
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found for this user.",
+        )
+    return ShareResponse(share_id=token)
+
+
+@router.delete("/conversations/{conversation_id}/share", status_code=status.HTTP_204_NO_CONTENT)
+async def unshare_conversation(
+    conversation_id: str,
+    owner_id: str = Depends(current_owner_id),
+) -> Response:
+    """Take the public link down. The thread and its messages stay.
+
+    204 whether or not a link existed: the row is what is checked, and a second Unshare press is the
+    same request as the first. `-> Response` for the 204 rule documented in `documents.delete_document`.
+    """
+    if not metadata_store.revoke_share(owner_id, conversation_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found for this user.",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/conversations/{conversation_id}", response_model=ConversationDetail)
 async def get_conversation(
     conversation_id: str,
@@ -404,3 +449,56 @@ async def get_conversation(
         for row in rows
     ]
     return ConversationDetail(conversation=_conversation_response(header), messages=messages)
+
+
+# A real token is `secrets.token_urlsafe(16)`: 22 characters. Anything much longer is a probe or a
+# pasted URL with a query string on it, and refusing it here keeps a stray path segment out of a Mongo
+# filter. The refusal is a 404, not a 400 — a distinct status for malformed versus unknown would turn
+# this route into an oracle on what a token looks like.
+_MAX_SHARE_TOKEN_LENGTH = 64
+
+
+@router.get("/shared/{share_id}", response_model=SharedConversation)
+async def read_shared_conversation(
+    share_id: str,
+    _: None = Depends(shared_rate_limit),
+) -> SharedConversation:
+    """Read a shared thread the way a stranger sees it: no session, no owner, prose only.
+
+    This is the only route in the app that answers without an identity, so its safety rests on two
+    things neither of the other routes uses:
+
+    - The token. 128 bits from `secrets`, so unlike the sequential ObjectId every other conversation
+      route is keyed on, it cannot be walked. That is the sole reason this query is allowed to run
+      without `owner_id` in the filter.
+    - The projection. `get_shared_messages` reads only role, content and timestamp, and `SharedMessage`
+      has no citations or agent-trace fields at all — so a filename, a passage, or the owner's id cannot
+      reach a shared page by an oversight three functions away. A later field added to `messages` is
+      absent here until someone adds it to the projection on purpose.
+
+    The title is the author's own question text rather than document content, which is why it is shared
+    while the sources are not. The residual leak is therefore whatever the author typed into that first
+    question — a naming choice they can make before sharing, not a filename the server knows about.
+    """
+    if len(share_id) > _MAX_SHARE_TOKEN_LENGTH:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This link is not valid.")
+
+    row = metadata_store.get_shared_conversation(share_id)
+    if row is None:
+        # One message for "never existed" and "revoked", because they are the same thing to the visitor
+        # and distinguishing them would say that a token was once live.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This link is not valid.")
+
+    rows = metadata_store.get_shared_messages(str(row["conversation_id"]))
+    return SharedConversation(
+        title=str(row.get("title", "New chat")),
+        updated_at=metadata_store.to_iso(row.get("updated_at")),
+        messages=[
+            SharedMessage(
+                role=str(message.get("role", "user")),
+                content=str(message.get("content", "")),
+                created_at=metadata_store.to_iso(message.get("created_at")),
+            )
+            for message in rows
+        ],
+    )

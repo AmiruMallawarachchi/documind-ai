@@ -49,6 +49,41 @@ class ConversationResponse(BaseModel):
     # Absent on every thread written before pinning existed, so the default is the answer rather than
     # a migration: a missing field is an unpinned thread, and no conversation document has to be rewritten.
     pinned: bool = False
+    # Whether a public link exists, not the link itself: the token belongs in the response of the action
+    # that mints it, not in a list the browser keeps in memory and the log may print.
+    shared: bool = False
+
+
+class ShareResponse(BaseModel):
+    """A successful share carries the token alone, with nothing that identifies whose thread it is."""
+
+    share_id: str
+
+
+class SharedMessage(BaseModel):
+    """One turn as a stranger sees it.
+
+    There is no `citations` and no `agent_trace` field here at all, rather than a stripped copy of
+    `MessageResponse`. A shared thread is prose only by the product's own decision, so the shape that
+    leaves the server cannot carry a filename or a passage even if a later refactor forgets to strip one.
+    """
+
+    role: str
+    content: str
+    created_at: str
+
+
+class SharedConversation(BaseModel):
+    """The public page's whole payload: a name, a date, and the prose.
+
+    There is no `conversation_id` and no `owner_id` here. A visitor needs none of it to read the
+    thread, and putting the id in the response would hand back the sequential ObjectId that the token
+    exists to hide.
+    """
+
+    title: str
+    updated_at: str
+    messages: list[SharedMessage] = Field(default_factory=list)
 
 
 class ConversationPatch(BaseModel):
@@ -60,7 +95,6 @@ class ConversationPatch(BaseModel):
 
     title: str | None = Field(default=None, min_length=1, max_length=80)
     pinned: bool | None = None
-
 
 
 class MessageResponse(BaseModel):
