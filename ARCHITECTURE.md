@@ -317,7 +317,7 @@ list.
 
 ## 7. Frontend
 
-Next.js 16 App Router, two routes (`/` and `/verify`), no server rendering of user data.
+Next.js 16 App Router, three routes (`/`, `/verify` and `/s/[token]`), no server rendering of user data.
 
 - `app/page.tsx` is two components: `Home` owns the session (`useSyncExternalStore` over
   `localStorage`, with a `SESSION_PENDING` server snapshot so there is no hydration flash and no
@@ -358,8 +358,20 @@ Next.js 16 App Router, two routes (`/` and `/verify`), no server rendering of us
   its editor open with the draft still in it rather than losing what the reader typed. The *order* is the
   list's: pinned-first, derived in `HistoryList` with a stable `Number(b.pinned) - Number(a.pinned)`,
   because `updated_at` means *last message* and a server that re-sorted by pin would have to stop lying
-  about recency. The *row's own frozen flag* is the row's: one `busy` for its three buttons, since a second
+  about recency. The *row's own frozen flag* is the row's: one `busy` for its four buttons, since a second
   click while a write is in flight sends a rename behind itself.
+- `/s/[token]` is the one route with no session, and it resolves nothing on the server. Its page component
+  takes no `props`: `SharedThread` reads the token with `useParams()` and fetches with it, so the served HTML
+  is a static shell and the same card is what the reader sees while the fetch is in flight. That shape was
+  forced by a failure, not chosen for tidiness — the version that `await`ed `params` and passed the token
+  down built cleanly, was labelled `◐` Partial Prerender, and then served a `<!--$?-->` placeholder that
+  nothing ever filled, so the page sat on "Loading this thread…" with no request in the network log at all.
+  `SharedTranscript` beside it is presentational for the same reason the rest of `components/` is: the two
+  bubbles and the header sentence, with `parseAnswer` splitting the `[n]` markers back out as inert
+  superscripts — a chip that jumps to a source list that does not exist would be worse than a bare number.
+  `SharedThread` keeps three non-ready phases rather than one error state, because a `404` is a fact about
+  the link and anything else is a fact about the moment; telling a reader their good link is dead because a
+  free-tier backend was still waking up is how a shared page loses its audience.
 - Three pure modules sit under `lib/` because they are logic with edge cases and no DOM: `citations.ts`
   splits an answer on its `[n]` markers, `trace.ts` translates the graph's node names (and passes an unknown
   one through rather than blanking a step out of the reader's view), and `format.ts` owns the byte-size
@@ -418,21 +430,29 @@ a rule that only a test can hold: `stream_text` must never restart a stream that
 words, because the retry appends a second answer mid-sentence — `test_llm_retry.py` caught exactly that
 defect while it was still a docstring promise rather than a behaviour.
 
-The frontend has its own suite: `cd frontend && npm test` — **59 tests** under vitest and jsdom, no browser
+The frontend has its own suite: `cd frontend && npm test` — **74 tests** under vitest and jsdom, no browser
 and no backend. It exists because a broken `[1]` citation marker renders as perfectly readable prose with a
 stray bracket in it. The type check passed, the lint passed, the build passed, and clicking through the app
 still showed a sentence — only a test that asserts what the answer bubble actually says catches that class
 of defect.
 
-Eight files, and the split is the point: `citations`, `trace` and `format` test pure functions with no DOM
-standing between the assertion and the logic, while `message`, `ui`, `document-row`, `conversation-row` and
-`history-list` test rendered output — that a busy control keeps its colour, that a banner is a `div` so it
-can carry a button, that a status is a word as well as a colour, that a delete confirmation asks once per
-row instead of once per panel, that the scope checkbox carries the same keyboard ring as the buttons beside
-it, that a one-chunk document says "1 chunk · 1 page" rather than "1 chunks · 1 pages", that a pinned thread
-sits above an unpinned one whatever the server's order was, that an unchanged title sends no request at all,
-that a rejected rename leaves the editor open with its draft and its Save button enabled, and that one
-failed write produces one sentence under the list rather than one per row.
+Nine files, and the split is the point: `citations`, `trace` and `format` test pure functions with no DOM
+standing between the assertion and the logic, while `message`, `ui`, `document-row`, `conversation-row`,
+`history-list` and `shared-transcript` test rendered output — that a busy control keeps its colour, that a
+banner is a `div` so it can carry a button, that a status is a word as well as a colour, that a delete
+confirmation asks once per row instead of once per panel, that the scope checkbox carries the same keyboard
+ring as the buttons beside it, that a one-chunk document says "1 chunk · 1 page" rather than "1 chunks · 1
+pages", that a pinned thread sits above an unpinned one whatever the server's order was, that an unchanged
+title sends no request at all, that a rejected rename leaves the editor open with its draft and its Save
+button enabled, that one failed write produces one sentence under the list rather than one per row, that the
+share panel's link is the page's own origin rather than the API's host, and that a shared answer's `[2]` is
+superscript text and never a button.
+
+What that suite deliberately does **not** cover is `SharedThread`. It is one `fetch` and four branches, and
+stubbing `fetch` in jsdom would be testing the stub — the whole risk in that component is what the real
+server answers to a real token, which is what the browser pass checks. Same rule as SSE streaming and the
+`localStorage` session: the repo tests pure rendering logic, and verifies wiring that needs the browser's
+own behaviour by driving the running app.
 
 ---
 

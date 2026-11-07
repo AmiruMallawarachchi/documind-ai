@@ -1,7 +1,7 @@
 # DocuMind AI
 
 > **Project status:** 🟢 Live. Phases 0–7 complete — ingestion, multi-agent graph, streaming chat UI,
-> auth, rate limiting, structured logging, a 430-test suite (371 backend, 59 frontend) that runs with no
+> auth, rate limiting, structured logging, a 445-test suite (371 backend, 74 frontend) that runs with no
 > credentials, and a deployed backend + frontend. See [Deployment](#deployment-render--vercel) for how it
 > is wired.
 
@@ -49,6 +49,14 @@ and the backend mints a session token scoped to your own document namespace, so 
 is filtered to what you uploaded. Passwords are Argon2id-hashed at OWASP's memory-hard baseline, and no
 endpoint tells you whether an address is registered: register answers `202` the same way whether the
 account is new or years old, and a wrong address and a wrong password are one identical `401`.
+
+**Sharing a thread.** Every row in the history sidebar has a link button. It mints one public URL for that
+thread — `…/s/<22-character token>` — and the same button shows that URL again later, copies it, or takes it
+down. What a recipient reads is the title and the prose: questions and answers, and nothing else. No
+filenames, no passages, no citations, no thread id, because the documents belong to the person who uploaded
+them. The link needs no account and carries no credential, so it survives being pasted into a chat; it lasts
+until the author revokes it, and a revoked or mistyped link says so in one sentence. Re-sharing after a
+revoke mints a *new* token, which is what lets the old link stay dead.
 
 No inbox to hand? Sign in with the shared demo account:
 
@@ -201,7 +209,7 @@ a crash at boot beats a 500 buried inside a LangChain call stack mid-request.
 ```bash
 cd backend && pytest -q          # 371 tests, no network, no credentials
 ruff check app tests scripts
-cd ../frontend && npm test       # 59 frontend tests in jsdom, no browser, no backend
+cd ../frontend && npm test       # 74 frontend tests in jsdom, no browser, no backend
 npm run lint && npm run build
 ```
 

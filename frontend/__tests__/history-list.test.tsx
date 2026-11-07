@@ -43,6 +43,8 @@ function renderList(conversations: ConversationSummary[], extra: Record<string, 
       onSelect={vi.fn()}
       onRename={vi.fn().mockResolvedValue(undefined)}
       onTogglePin={vi.fn().mockResolvedValue(undefined)}
+      onShare={vi.fn().mockResolvedValue("tok-abc")}
+      onUnshare={vi.fn().mockResolvedValue(undefined)}
       onDelete={vi.fn().mockResolvedValue(undefined)}
       {...extra}
     />,

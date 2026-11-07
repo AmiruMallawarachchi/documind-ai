@@ -62,6 +62,22 @@ export type ConversationDetail = {
   messages: ChatMessage[];
 };
 
+/**
+ * One message as a stranger sees it: the prose and when it was said. There is no `citations` field here
+ * because the backend's shared view has none — the documents belong to the person who uploaded them.
+ */
+export type SharedMessage = {
+  role: string;
+  content: string;
+  created_at: string;
+};
+
+export type SharedConversation = {
+  title: string;
+  updated_at: string;
+  messages: SharedMessage[];
+};
+
 /** A response that carries a readable reason, so the UI can show the backend's message verbatim. */
 export class ApiError extends Error {
   readonly status: number;
@@ -152,6 +168,52 @@ export function patchConversation(
 
 export function deleteConversation(conversationId: string): Promise<void> {
   return request<void>(`/api/conversations/${conversationId}`, { method: "DELETE" });
+}
+
+/**
+ * Mint, or re-fetch, the thread's one public token.
+ *
+ * One call serves both cases because the backend mints idempotently: pressing Share twice returns the
+ * token that is already live rather than stranding the first link with nothing left to revoke. That is also
+ * how a row shows its link again a week later — the token deliberately never appears in
+ * `GET /api/conversations`, so asking for the link *is* how you find out you have one.
+ */
+export function shareConversation(conversationId: string): Promise<string> {
+  return request<{ share_id: string }>(`/api/conversations/${conversationId}/share`, {
+    method: "POST",
+  }).then((body) => body.share_id);
+}
+
+/** Closing the link. The thread and its messages stay; a `204` is returned whether or not a link existed. */
+export function unshareConversation(conversationId: string): Promise<void> {
+  return request<void>(`/api/conversations/${conversationId}/share`, { method: "DELETE" });
+}
+
+/**
+ * The address a recipient is sent. Built from the browser's own origin rather than `API_URL`, because the
+ * link is a page in this app, not an endpoint on the backend — and on Vercel and Render those two origins
+ * are different hosts, so composing it from `API_URL` would publish a link to a 404.
+ */
+export function shareUrl(token: string): string {
+  return `${window.location.origin}/s/${token}`;
+}
+
+/**
+ * Read a shared thread the way its recipient does.
+ *
+ * Deliberately not `request()`, twice over. It sends no `Authorization`: a visitor following a link has no
+ * session, and attaching one when they do would let a signed-in reader's own identity ride along to an
+ * endpoint that answers anyone. And it does not call `noteIfRejected`, so a revoked link's `404` cannot be
+ * mistaken for "your token expired" and sign an already-signed-in reader out of DocuMind while reading
+ * someone else's thread.
+ */
+export async function getSharedConversation(
+  token: string,
+  signal?: AbortSignal,
+): Promise<SharedConversation> {
+  const response = await fetch(`${API_URL}/api/shared/${token}`, { signal });
+  if (!response.ok) throw await errorFrom(response);
+  return (await response.json()) as SharedConversation;
 }
 
 /**

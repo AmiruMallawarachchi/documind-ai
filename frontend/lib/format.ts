@@ -13,3 +13,22 @@ export function formatBytes(size: number): string {
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/**
+ * A date a reader sees, not a timestamp a machine parses.
+ *
+ * The shared page is the only place in the app that shows one, and it earns its place: an answer about a
+ * document is a statement about the file *as of* that day, and a recipient who is sent the link a month
+ * later should be able to tell.
+ *
+ * The locale is explicit rather than `undefined` because the output is asserted in a test and rendered for
+ * a reader: inheriting the visitor's locale would make the same link say different things in different
+ * browsers, and make the test pass or fail on the machine that runs it.
+ */
+export function formatDate(stamp: string): string {
+  return new Date(stamp).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
