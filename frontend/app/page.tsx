@@ -32,6 +32,8 @@ import {
   deleteConversation,
   listConversations,
   patchConversation,
+  shareConversation,
+  unshareConversation,
 } from "@/lib/api";
 import { useDocuments } from "@/lib/use-documents";
 import { useSession } from "@/lib/use-session";
@@ -117,11 +119,14 @@ function Workspace({ ownerId, onSignOut }: { ownerId: string; onSignOut: () => v
    * here is how a sidebar ends up showing a thread the account does not have.
    */
   const mutateHistory = useCallback(
-    async (write: () => Promise<unknown>) => {
+    async <T,>(write: () => Promise<T>): Promise<T> => {
       setHistoryError(null);
       try {
-        await write();
+        // The value is passed back through, not discarded: sharing a thread has to show the row the token
+        // the server minted, and this is the only place that knows the write succeeded.
+        const result = await write();
         refreshConversations();
+        return result;
       } catch (error) {
         setHistoryError(
           error instanceof ApiError ? error.message : "That did not reach the server. Try again.",
@@ -139,6 +144,16 @@ function Workspace({ ownerId, onSignOut }: { ownerId: string; onSignOut: () => v
 
   const pinConversation = useCallback(
     (id: string, pinned: boolean) => mutateHistory(() => patchConversation(id, { pinned })),
+    [mutateHistory],
+  );
+
+  const shareThread = useCallback(
+    (id: string) => mutateHistory(() => shareConversation(id)),
+    [mutateHistory],
+  );
+
+  const unshareThread = useCallback(
+    (id: string) => mutateHistory(() => unshareConversation(id)),
     [mutateHistory],
   );
 
@@ -216,6 +231,8 @@ function Workspace({ ownerId, onSignOut }: { ownerId: string; onSignOut: () => v
                 }}
                 onRename={renameConversation}
                 onTogglePin={pinConversation}
+                onShare={shareThread}
+                onUnshare={unshareThread}
                 onDelete={removeConversation}
               />
             </Section>

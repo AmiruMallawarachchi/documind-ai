@@ -5,8 +5,8 @@
  *
  * Opening one is a whole remount of the chat panel rather than a swap of the transcript in place, so this
  * list only ever says *which* thread the reader wants; `app/page.tsx` decides what that means for the rest
- * of the tree, and owns the rename/pin/delete writes for the same reason — the list is its state, and
- * deleting the thread that is on screen has to reach both.
+ * of the tree, and owns the rename/pin/share/delete writes for the same reason — the list is its state,
+ * and deleting the thread that is on screen has to reach both.
  *
  * The server names a thread after its first question, which is why a brand-new conversation appears here
  * without this component knowing anything about it.
@@ -30,8 +30,10 @@ type Props = {
   error: string | null;
   /** `null` is "no thread yet", which is what New chat means. */
   onSelect: (conversationId: string | null) => void;
-  onRename: (conversationId: string, title: string) => Promise<void>;
-  onTogglePin: (conversationId: string, pinned: boolean) => Promise<void>;
+  onRename: (conversationId: string, title: string) => Promise<unknown>;
+  onTogglePin: (conversationId: string, pinned: boolean) => Promise<unknown>;
+  onShare: (conversationId: string) => Promise<string>;
+  onUnshare: (conversationId: string) => Promise<void>;
   onDelete: (conversationId: string) => Promise<void>;
 };
 
@@ -42,6 +44,8 @@ export default function HistoryList({
   onSelect,
   onRename,
   onTogglePin,
+  onShare,
+  onUnshare,
   onDelete,
 }: Props) {
   // `Array.prototype.sort` is stable in every engine this app ships to, so the server's
@@ -76,6 +80,8 @@ export default function HistoryList({
             onSelect={onSelect}
             onRename={onRename}
             onTogglePin={onTogglePin}
+            onShare={onShare}
+            onUnshare={onUnshare}
             onDelete={onDelete}
           />
         ))}
