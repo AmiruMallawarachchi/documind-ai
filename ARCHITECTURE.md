@@ -85,6 +85,21 @@ auth dependency (JWT → owner_id)
         → SSE frames out, one HTTP response
 ```
 
+### Threads outside that flow
+
+A thread header is `{conversation_id, owner_id, title, created_at, updated_at}` and the title is seeded
+from the first question (`chat.py:101`, capped at 60 characters), because an untitled "New chat" list is
+useless by the fourth thread. Three things a user may want to do to that header happen between questions,
+not during one: rename it, pin it, delete it.
+
+`updated_at` is the history list's sort key and `save_message` is the only writer allowed to move it. A
+label edit that bumped the timestamp would fling a six-month-old thread to the top of the sidebar for
+someone who only wanted to call it something else, and pinning would do it twice over — so
+`update_conversation` sets exactly the fields named and nothing else. `pinned` is read with a default of
+`False`, which is why no conversation document had to be rewritten to add it: an absent key is already the
+answer. Deleting removes the messages first and then the header, so a half-finished delete leaves an empty
+thread the user can delete again rather than message rows that nothing can list, count, or clean up.
+
 ### The graph
 
 ```mermaid
@@ -213,6 +228,9 @@ Mongo and Pinecone filter already keys on. The frontend stores it in `localStora
 **Scoping.** `owner_id` is part of every Mongo filter (`tests/test_metadata_store.py` asserts the query
 shape for each one) and every Pinecone filter. Conversation ids are ObjectIds — sequential and guessable
 — so an unscoped `find_one` would hand over another user's full chat history from a URL parameter alone.
+The same rule covers the write paths added for thread labels: `PATCH` and `DELETE /api/conversations/{id}`
+put `owner_id` in the filter and answer `404` for a foreign id rather than `403`, because a `403` would
+confirm that the guessed id belongs to somebody — which is the enumeration the scoping exists to prevent.
 
 **Rate limiting.** A dependency-free sliding window (`core/rate_limit.py`): 10 chat / 6 upload per owner
 per minute, 5 sign-in attempts per client address per minute, and 8 account-creation attempts per address
@@ -331,7 +349,7 @@ Next.js 16 App Router, two routes (`/` and `/verify`), no server rendering of us
 
 ## 8. Testing strategy
 
-`cd backend && pytest` — **341 tests, no network, no credentials.**
+`cd backend && pytest` — **352 tests, no network, no credentials.**
 
 | File | Covers | Why it is separate |
 |---|---|---|

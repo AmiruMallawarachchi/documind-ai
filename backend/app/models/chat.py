@@ -46,6 +46,21 @@ class ConversationResponse(BaseModel):
     conversation_id: str
     title: str
     updated_at: str
+    # Absent on every thread written before pinning existed, so the default is the answer rather than
+    # a migration: a missing field is an unpinned thread, and no conversation document has to be rewritten.
+    pinned: bool = False
+
+
+class ConversationPatch(BaseModel):
+    """The labels a user can put on a thread. Both optional, and at least one must be present.
+
+    `title` is capped well below the 8,000 characters a question may be: it renders in a sidebar row and
+    the auto-seeded title is already only the first 60 characters of the opening question.
+    """
+
+    title: str | None = Field(default=None, min_length=1, max_length=80)
+    pinned: bool | None = None
+
 
 
 class MessageResponse(BaseModel):

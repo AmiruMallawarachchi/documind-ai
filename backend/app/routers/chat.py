@@ -23,7 +23,7 @@ import logging
 import re
 from collections.abc import Iterator
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 
 from app.agents import graph
@@ -31,6 +31,7 @@ from app.core.deps import chat_rate_limit, current_owner_id
 from app.models.chat import (
     ChatRequest,
     ConversationDetail,
+    ConversationPatch,
     ConversationResponse,
     EVENT_CITATIONS,
     EVENT_DONE,
@@ -305,17 +306,81 @@ def _stream_answer(
     yield _sse(EVENT_DONE, {"answer": answer, "agent_trace": trace, "citations": citations_payload})
 
 
+def _conversation_response(row: dict) -> ConversationResponse:
+    """Project a thread header onto the API, in one place.
+
+    The list and the detail view used to spell this projection separately, which is how a new field
+    silently appears in one and not the other.
+    """
+    return ConversationResponse(
+        conversation_id=str(row["conversation_id"]),
+        title=str(row.get("title", "New chat")),
+        updated_at=metadata_store.to_iso(row.get("updated_at")),
+        pinned=bool(row.get("pinned", False)),
+    )
+
+
 @router.get("/conversations", response_model=list[ConversationResponse])
 async def list_conversations(owner_id: str = Depends(current_owner_id)) -> list[ConversationResponse]:
     rows = metadata_store.list_conversations(owner_id)
-    return [
-        ConversationResponse(
-            conversation_id=str(row["conversation_id"]),
-            title=str(row.get("title", "New chat")),
-            updated_at=metadata_store.to_iso(row.get("updated_at")),
+    return [_conversation_response(row) for row in rows]
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ConversationResponse)
+async def patch_conversation(
+    conversation_id: str,
+    request: ConversationPatch,
+    owner_id: str = Depends(current_owner_id),
+) -> ConversationResponse:
+    """Rename and/or pin a thread.
+
+    A patch that names no field is refused rather than answered with the current row: a caller that sent
+    `{}` has lost its payload somewhere, and 200 would hide that.
+    """
+    fields: dict = {}
+    if request.title is not None:
+        title = request.title.strip()
+        if not title:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A conversation needs a title.",
+            )
+        fields["title"] = title
+    if request.pinned is not None:
+        fields["pinned"] = bool(request.pinned)
+
+    if not fields:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Nothing to change: send a title, a pinned flag, or both.",
         )
-        for row in rows
-    ]
+
+    if not metadata_store.update_conversation(owner_id, conversation_id, **fields):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found for this user.",
+        )
+
+    header = metadata_store.get_conversation(owner_id, conversation_id)
+    return _conversation_response(header)
+
+
+@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_conversation(
+    conversation_id: str,
+    owner_id: str = Depends(current_owner_id),
+) -> Response:
+    """Delete a thread with every message in it. There is no archive and no trash.
+
+    `-> Response` for the same reason `documents.delete_document` uses it: annotating `-> None` makes
+    NoneType the response model and the route then fails its own 204 at import time.
+    """
+    if not metadata_store.delete_conversation(owner_id, conversation_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found for this user.",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationDetail)
@@ -338,11 +403,4 @@ async def get_conversation(
         )
         for row in rows
     ]
-    return ConversationDetail(
-        conversation=ConversationResponse(
-            conversation_id=str(header["conversation_id"]),
-            title=str(header.get("title", "New chat")),
-            updated_at=metadata_store.to_iso(header.get("updated_at")),
-        ),
-        messages=messages,
-    )
+    return ConversationDetail(conversation=_conversation_response(header), messages=messages)

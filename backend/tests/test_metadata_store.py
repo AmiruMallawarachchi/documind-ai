@@ -75,10 +75,14 @@ class FakeCollection:
 
     def update_one(self, flt, update):
         self._db.log.append((f"{self._name}.update_one", flt, update))
-        return _Result(modified_count=1)
+        return _Result(modified_count=1, matched_count=1)
 
     def delete_one(self, flt):
         self._db.log.append((f"{self._name}.delete_one", flt))
+        return _Result(deleted_count=self._db.deleted)
+
+    def delete_many(self, flt):
+        self._db.log.append((f"{self._name}.delete_many", flt))
         return _Result(deleted_count=self._db.deleted)
 
     def find(self, flt, projection=None):
@@ -209,6 +213,58 @@ def test_a_conversation_load_is_scoped_by_owner(db):
     metadata_store.get_conversation("owner-a", "conv-1")
 
     assert logged(db, "conversations.find_one")[-1][1] == {"conversation_id": "conv-1", "owner_id": "owner-a"}
+
+
+def test_a_conversation_update_is_scoped_by_owner(db):
+    metadata_store.update_conversation("owner-a", "conv-1", title="Vendor terms", pinned=True)
+
+    flt, update = logged(db, "conversations.update_one")[-1][1:]
+    assert flt == {"conversation_id": "conv-1", "owner_id": "owner-a"}
+    assert update["$set"] == {"title": "Vendor terms", "pinned": True}
+
+
+def test_renaming_or_pinning_does_not_move_the_thread_in_the_list(db):
+    """The sidebar is ordered by `updated_at`, and only a new message should reorder it.
+
+    Bumping the timestamp on a label edit would fling a six-month-old thread to the top for someone who
+    only wanted to call it something else.
+    """
+    metadata_store.update_conversation("owner-a", "conv-1", title="Vendor terms")
+
+    _, update = logged(db, "conversations.update_one")[-1][1:]
+    assert "updated_at" not in update["$set"]
+
+
+def test_an_empty_conversation_update_asks_for_nothing(db):
+    assert metadata_store.update_conversation("owner-a", "conv-1") is False
+    assert logged(db, "conversations.update_one") == []
+
+
+def test_deleting_a_thread_takes_its_messages_with_it(db):
+    """Two deletes, both owner-scoped, and the messages go first.
+
+    If the header delete succeeded and this one did not, the rows would outlive their thread as orphans
+    nothing can list, count or clean up; the reverse order leaves a visible empty thread that the user
+    can simply delete again.
+    """
+    metadata_store.delete_conversation("owner-a", "conv-1")
+
+    messages = logged(db, "messages.delete_many")[-1][1]
+    header = logged(db, "conversations.delete_one")[-1][1]
+    assert messages == {"conversation_id": "conv-1", "owner_id": "owner-a"}
+    assert header == {"conversation_id": "conv-1", "owner_id": "owner-a"}
+    assert [entry[0] for entry in db.log] == ["messages.delete_many", "conversations.delete_one"]
+
+
+def test_an_absent_pinned_field_reads_as_unpinned(db):
+    """Threads written before pinning existed have no such key, and must not need rewriting."""
+    db.rows["conversations"] = [
+        {"conversation_id": "conv-old", "owner_id": "owner-a", "title": "Old", "updated_at": None}
+    ]
+
+    rows = metadata_store.list_conversations("owner-a")
+
+    assert rows[0].get("pinned", False) is False
 
 
 def test_a_status_transition_goes_through_the_owner_scoped_update(db):

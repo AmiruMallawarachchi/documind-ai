@@ -130,6 +130,7 @@ class FakeMetadataStore:
             "conversation_id": conversation_id,
             "owner_id": owner_id,
             "title": title,
+            "pinned": False,
             "created_at": STAMP,
             "updated_at": STAMP,
         }
@@ -142,6 +143,21 @@ class FakeMetadataStore:
 
     def list_conversations(self, owner_id, limit=50):
         return [row for row in self.conversations.values() if row["owner_id"] == owner_id][:limit]
+
+    def update_conversation(self, owner_id, conversation_id, **fields):
+        record = self.get_conversation(owner_id, conversation_id)
+        if record is None or not fields:
+            return False
+        record.update(fields)
+        return True
+
+    def delete_conversation(self, owner_id, conversation_id):
+        """Owner-scoped, and takes the thread's messages with it, like the real service."""
+        if self.get_conversation(owner_id, conversation_id) is None:
+            return False
+        del self.conversations[conversation_id]
+        self.messages = [m for m in self.messages if m["conversation_id"] != conversation_id]
+        return True
 
     def save_message(self, **kwargs):
         self.messages.append(dict(kwargs))
@@ -292,6 +308,8 @@ def fake_metadata(monkeypatch) -> FakeMetadataStore:
         "create_conversation",
         "get_conversation",
         "list_conversations",
+        "update_conversation",
+        "delete_conversation",
         "save_message",
         "get_recent_messages",
         "get_conversation_messages",
