@@ -44,6 +44,9 @@ export type ConversationSummary = {
   conversation_id: string;
   title: string;
   updated_at: string;
+  pinned: boolean;
+  /** Whether a public link exists. The token itself never appears in a list — see `shareConversation`. */
+  shared: boolean;
 };
 
 export type ChatMessage = {
@@ -130,6 +133,25 @@ export function getConversation(
   return request<ConversationDetail>(`/api/conversations/${conversationId}`, {
     signal,
   });
+}
+
+/**
+ * Rename and/or pin a thread. At least one field is required: an empty patch is a lost payload, and the
+ * backend answers it `422` rather than returning the row unchanged.
+ */
+export function patchConversation(
+  conversationId: string,
+  patch: { title?: string; pinned?: boolean },
+): Promise<ConversationSummary> {
+  return request<ConversationSummary>(`/api/conversations/${conversationId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export function deleteConversation(conversationId: string): Promise<void> {
+  return request<void>(`/api/conversations/${conversationId}`, { method: "DELETE" });
 }
 
 /**

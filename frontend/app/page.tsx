@@ -25,7 +25,14 @@ import DocumentsPanel from "@/components/DocumentsPanel";
 import HistoryList from "@/components/HistoryList";
 import Button from "@/components/ui/Button";
 import { SECTION_TITLE } from "@/components/ui/tokens";
-import { API_URL, type ConversationSummary, listConversations } from "@/lib/api";
+import {
+  API_URL,
+  ApiError,
+  type ConversationSummary,
+  deleteConversation,
+  listConversations,
+  patchConversation,
+} from "@/lib/api";
 import { useDocuments } from "@/lib/use-documents";
 import { useSession } from "@/lib/use-session";
 
@@ -52,6 +59,7 @@ function Workspace({ ownerId, onSignOut }: { ownerId: string; onSignOut: () => v
   // must not reset the answer the user is watching arrive.
   const [threadKey, setThreadKey] = useState(0);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(false);
 
   const refreshConversations = useCallback(() => {
@@ -101,6 +109,49 @@ function Workspace({ ownerId, onSignOut }: { ownerId: string; onSignOut: () => v
       refreshConversations();
     },
     [refreshConversations],
+  );
+
+  /**
+   * One write, then a re-read. Patching the local row instead would save a request and cost the truth:
+   * the server owns `updated_at`, the `shared` flag, and the order the list comes back in, and a guess
+   * here is how a sidebar ends up showing a thread the account does not have.
+   */
+  const mutateHistory = useCallback(
+    async (write: () => Promise<unknown>) => {
+      setHistoryError(null);
+      try {
+        await write();
+        refreshConversations();
+      } catch (error) {
+        setHistoryError(
+          error instanceof ApiError ? error.message : "That did not reach the server. Try again.",
+        );
+        throw error;
+      }
+    },
+    [refreshConversations],
+  );
+
+  const renameConversation = useCallback(
+    (id: string, title: string) => mutateHistory(() => patchConversation(id, { title })),
+    [mutateHistory],
+  );
+
+  const pinConversation = useCallback(
+    (id: string, pinned: boolean) => mutateHistory(() => patchConversation(id, { pinned })),
+    [mutateHistory],
+  );
+
+  const removeConversation = useCallback(
+    (id: string) =>
+      mutateHistory(() =>
+        deleteConversation(id).then(() => {
+          // The deleted thread is the one on screen: the transcript it showed is gone, so the panel
+          // goes back to a new chat rather than sitting on a thread that now answers 404.
+          if (id === conversationId) startThread(null);
+        }),
+      ),
+    [conversationId, mutateHistory, startThread],
   );
 
   return (
@@ -158,10 +209,14 @@ function Workspace({ ownerId, onSignOut }: { ownerId: string; onSignOut: () => v
               <HistoryList
                 conversations={conversations}
                 activeId={conversationId}
+                error={historyError}
                 onSelect={(id) => {
                   startThread(id);
                   setShowSidebar(false);
                 }}
+                onRename={renameConversation}
+                onTogglePin={pinConversation}
+                onDelete={removeConversation}
               />
             </Section>
           </div>
