@@ -86,7 +86,11 @@ app.add_middleware(
     allow_credentials=True,
     # Listed explicitly rather than "*": the method set is known, and naming it means a typo in the
     # frontend shows up as a clear CORS error instead of quietly working with an unintended verb.
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    # PATCH is here because #35 gave conversations a rename and a pin, and a browser that is not told it
+    # may PATCH never sends the request — the route answers fine for every client in the test suite, which
+    # calls it directly, and fails only for the one client that asks first. tests/test_cors.py is what keeps
+    # this list and `frontend/lib/api.ts` from drifting apart again.
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     # Authorization is the header real clients now send; keeping the list explicit still means a typo in
     # the frontend surfaces as a clear CORS error rather than a preflight that quietly passed.
     allow_headers=["Authorization", "Content-Type", "X-Demo-Key", "X-Request-ID"],
