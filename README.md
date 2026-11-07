@@ -317,7 +317,7 @@ Stated plainly, because a list of limits is the most honest part of a portfolio 
 | 7 · Deploy + docs | Render + Vercel, this README, `ARCHITECTURE.md` | ✅ live |
 | 8 · Portfolio polish (stretch) | Demo video, write-up for Amiru AI Lab / HuggingFace | ⬜ |
 
-Design decision log: [`DECISIONS.md`](DECISIONS.md).
+Design decision log: [`DECISIONS.md`](DECISIONS.md) · Long-form write-up: [`ARTICLE.md`](ARTICLE.md).
 
 ## Licence
 
