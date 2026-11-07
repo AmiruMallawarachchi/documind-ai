@@ -55,9 +55,16 @@ const STYLE = {
     rest: "font-normal text-zinc-400",
   },
   /** A bare glyph in the corner of a row. Its hover colour is the action it wraps, and today that is
-   *  always delete. */
+   *  always delete — which is why the row's other glyphs use `iconNeutral` rather than this one. */
   icon: {
     idle: "hover:bg-zinc-800 hover:text-red-400",
+    rest: "rounded-lg font-normal text-zinc-600",
+  },
+  /** The same rectangle for an action that ends nothing: the hover brightens instead of going red, and
+   *  a `className` could not have changed it anyway — two `hover:` utilities in one class list resolve by
+   *  the order Tailwind emitted them, not by the order they were typed. */
+  iconNeutral: {
+    idle: "hover:bg-zinc-800 hover:text-zinc-200",
     rest: "rounded-lg font-normal text-zinc-600",
   },
   danger: {
