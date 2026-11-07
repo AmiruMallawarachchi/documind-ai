@@ -1,8 +1,9 @@
 # DocuMind AI
 
 > **Project status:** 🟢 Live. Phases 0–7 complete — ingestion, multi-agent graph, streaming chat UI,
-> auth, rate limiting, structured logging, a 203-test suite that runs with no credentials, and a
-> deployed backend + frontend. See [Deployment](#deployment-render--vercel) for how it is wired.
+> auth, rate limiting, structured logging, a 430-test suite (371 backend, 59 frontend) that runs with no
+> credentials, and a deployed backend + frontend. See [Deployment](#deployment-render--vercel) for how it
+> is wired.
 
 **What it is:** a document Q&A demo where answers are verified before you see them. Upload PDFs, DOCX,
 or TXT; ask a question; a four-agent LangGraph pipeline retrieves the relevant passages, drafts an
@@ -200,7 +201,7 @@ a crash at boot beats a 500 buried inside a LangChain call stack mid-request.
 ```bash
 cd backend && pytest -q          # 371 tests, no network, no credentials
 ruff check app tests scripts
-cd ../frontend && npm test       # 42 frontend tests in jsdom, no browser, no backend
+cd ../frontend && npm test       # 59 frontend tests in jsdom, no browser, no backend
 npm run lint && npm run build
 ```
 

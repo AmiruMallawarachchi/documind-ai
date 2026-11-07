@@ -347,10 +347,19 @@ Next.js 16 App Router, two routes (`/` and `/verify`), no server rendering of us
   user reaches the picker through the Upload button, which does have the ring.
 - The rest of `components/` is one component per concern, split by who needs the state: `DocumentRow` keeps
   its own delete confirmation (a panel-level `confirming: string | null` meant opening a second row's
-  question closed the first), `AgentTrace` keeps its own disclosure, and `SourceList` does not — which
-  source is open is also set by the `[n]` buttons inside the answer, so `Message` holds it and passes it
-  down. `HistoryList` says which thread the reader picked and lets `app/page.tsx` decide what that means
-  for the rest of the tree.
+  question closed the first), `ConversationRow` keeps its own editor and confirmation for the same reason —
+  two threads are independent things, so renaming one must not close the other — and `AgentTrace` keeps its
+  own disclosure, and `SourceList` does not — which source is open is also set by the `[n]` buttons inside
+  the answer, so `Message` holds it and passes it down. `HistoryList` says which thread the reader picked
+  and lets `app/page.tsx` decide what that means for the rest of the tree.
+- The history row is the pattern the panel repeats, and it splits three ways. The *write* is the page's:
+  `mutateHistory` in `app/page.tsx` owns the one error line under the list, because four rows each shouting
+  about the same outage is worse than one quiet sentence — and it rethrows, precisely so the row can leave
+  its editor open with the draft still in it rather than losing what the reader typed. The *order* is the
+  list's: pinned-first, derived in `HistoryList` with a stable `Number(b.pinned) - Number(a.pinned)`,
+  because `updated_at` means *last message* and a server that re-sorted by pin would have to stop lying
+  about recency. The *row's own frozen flag* is the row's: one `busy` for its three buttons, since a second
+  click while a write is in flight sends a rename behind itself.
 - Three pure modules sit under `lib/` because they are logic with edge cases and no DOM: `citations.ts`
   splits an answer on its `[n]` markers, `trace.ts` translates the graph's node names (and passes an unknown
   one through rather than blanking a step out of the reader's view), and `format.ts` owns the byte-size
@@ -409,18 +418,21 @@ a rule that only a test can hold: `stream_text` must never restart a stream that
 words, because the retry appends a second answer mid-sentence — `test_llm_retry.py` caught exactly that
 defect while it was still a docstring promise rather than a behaviour.
 
-The frontend has its own suite: `cd frontend && npm test` — **42 tests** under vitest and jsdom, no browser
+The frontend has its own suite: `cd frontend && npm test` — **59 tests** under vitest and jsdom, no browser
 and no backend. It exists because a broken `[1]` citation marker renders as perfectly readable prose with a
 stray bracket in it. The type check passed, the lint passed, the build passed, and clicking through the app
 still showed a sentence — only a test that asserts what the answer bubble actually says catches that class
 of defect.
 
-Six files, and the split is the point: `citations`, `trace` and `format` test pure functions with no DOM
-standing between the assertion and the logic, while `message`, `ui` and `document-row` test rendered output
-— that a busy control keeps its colour, that a banner is a `div` so it can carry a button, that a status is
-a word as well as a colour, that a delete confirmation asks once per row instead of once per panel, that the
-scope checkbox carries the same keyboard ring as the buttons beside it, and that a one-chunk document says
-"1 chunk · 1 page" rather than "1 chunks · 1 pages".
+Eight files, and the split is the point: `citations`, `trace` and `format` test pure functions with no DOM
+standing between the assertion and the logic, while `message`, `ui`, `document-row`, `conversation-row` and
+`history-list` test rendered output — that a busy control keeps its colour, that a banner is a `div` so it
+can carry a button, that a status is a word as well as a colour, that a delete confirmation asks once per
+row instead of once per panel, that the scope checkbox carries the same keyboard ring as the buttons beside
+it, that a one-chunk document says "1 chunk · 1 page" rather than "1 chunks · 1 pages", that a pinned thread
+sits above an unpinned one whatever the server's order was, that an unchanged title sends no request at all,
+that a rejected rename leaves the editor open with its draft and its Save button enabled, and that one
+failed write produces one sentence under the list rather than one per row.
 
 ---
 
