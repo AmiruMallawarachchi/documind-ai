@@ -96,6 +96,21 @@ def login_rate_limit(request: Request) -> None:
         reject("sign-in attempts per minute", retry_after)
 
 
+def shared_rate_limit(request: Request) -> None:
+    """Cap reads of a shared conversation per client address.
+
+    This is the one route with no identity to key on: it is deliberately public, so the address from
+    `X-Forwarded-For` is the only handle. The token is 128 bits and cannot be guessed at any useful rate,
+    but the limit is what stops one visitor turning a link they already hold into a scrape of the free
+    instance's CPU and Atlas reads.
+    """
+    retry_after = limiter.check(
+        "shared", client_address(request), settings.shared_requests_per_minute
+    )
+    if retry_after:
+        reject("shared-conversation reads per minute", retry_after)
+
+
 def signup_rate_limit(request: Request) -> None:
     """Cap account creation and link resending per address, over an hour.
 

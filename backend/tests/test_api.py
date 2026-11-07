@@ -12,6 +12,7 @@ import io
 import json
 
 
+from app.core.config import settings
 from tests.conftest import make_chunk
 from tests.test_extractor import build_pdf
 
@@ -458,6 +459,100 @@ def test_an_unknown_thread_cannot_be_patched_or_deleted(client, fake_metadata):
         "/api/conversations/conv-does-not-exist", headers=OWNER_A, json={"pinned": True}
     ).status_code == 404
     assert client.delete("/api/conversations/conv-does-not-exist", headers=OWNER_A).status_code == 404
+
+
+def shared_view(client, token):
+    """Read a share link the way a stranger does: no headers at all."""
+    return client.get(f"/api/shared/{token}")
+
+
+def test_sharing_a_thread_gives_one_stable_link(client, fake_metadata, fake_vectors, fake_llm):
+    """Pressing Share twice must not retire the first link, which would leave it live and unrevokeable."""
+    conversation_id = start_thread(client, fake_vectors)
+
+    first = client.post(f"/api/conversations/{conversation_id}/share", headers=OWNER_A).json()
+    second = client.post(f"/api/conversations/{conversation_id}/share", headers=OWNER_A).json()
+
+    assert first == second
+    assert first["share_id"]
+
+
+def test_a_shared_thread_needs_no_session_to_read(client, fake_metadata, fake_vectors, fake_llm):
+    conversation_id = start_thread(client, fake_vectors)
+    token = client.post(f"/api/conversations/{conversation_id}/share", headers=OWNER_A).json()["share_id"]
+
+    body = shared_view(client, token).json()
+
+    assert body["title"] == "What are the terms?"
+    assert [message["role"] for message in body["messages"]] == ["user", "assistant"]
+    assert body["messages"][1]["content"]
+
+
+def test_a_shared_thread_shows_answers_only(client, fake_metadata, fake_vectors, fake_llm):
+    """The whole promise of the link: prose, and nothing that names the owner's documents.
+
+    Asserted against the serialised body rather than the model, because the field that must not appear
+    is the one a later refactor forgets to strip.
+    """
+    conversation_id = start_thread(client, fake_vectors)
+    token = client.post(f"/api/conversations/{conversation_id}/share", headers=OWNER_A).json()["share_id"]
+
+    assert fake_metadata.messages[1].get("citations"), "the thread under test must have citations to hide"
+
+    response = shared_view(client, token)
+    body = response.text
+
+    for secret in ["loan.pdf", "citations", "chunk_text", "page_number", "owner_id", "conversation_id", "agent_trace"]:
+        assert secret not in body, f"{secret} must not reach a public page"
+
+
+def test_revoking_a_link_closes_it(client, fake_metadata, fake_vectors, fake_llm):
+    conversation_id = start_thread(client, fake_vectors)
+    token = client.post(f"/api/conversations/{conversation_id}/share", headers=OWNER_A).json()["share_id"]
+    assert shared_view(client, token).status_code == 200
+
+    assert client.delete(f"/api/conversations/{conversation_id}/share", headers=OWNER_A).status_code == 204
+
+    assert shared_view(client, token).status_code == 404
+    assert client.get(f"/api/conversations/{conversation_id}", headers=OWNER_A).status_code == 200
+
+
+def test_another_owner_cannot_share_or_unshare_a_thread(client, fake_metadata, fake_vectors, fake_llm):
+    conversation_id = start_thread(client, fake_vectors)
+
+    assert client.post(f"/api/conversations/{conversation_id}/share", headers=OWNER_B).status_code == 404
+
+    token = client.post(f"/api/conversations/{conversation_id}/share", headers=OWNER_A).json()["share_id"]
+    assert client.delete(f"/api/conversations/{conversation_id}/share", headers=OWNER_B).status_code == 404
+    assert shared_view(client, token).status_code == 200
+
+
+def test_an_unknown_or_absurd_token_is_404(client, fake_metadata):
+    """A token that is too long to be one is refused as absent, never as malformed."""
+    assert shared_view(client, "tok-does-not-exist").status_code == 404
+    assert shared_view(client, "x" * 500).status_code == 404
+
+
+def test_the_list_says_which_threads_are_shared(client, fake_metadata, fake_vectors, fake_llm):
+    """The sidebar needs the flag without the token, so the token stays out of a cached list."""
+    conversation_id = start_thread(client, fake_vectors)
+
+    assert client.get("/api/conversations", headers=OWNER_A).json()[0]["shared"] is False
+
+    client.post(f"/api/conversations/{conversation_id}/share", headers=OWNER_A)
+
+    listed = client.get("/api/conversations", headers=OWNER_A).json()[0]
+    assert listed["shared"] is True
+    assert "share_id" not in listed
+
+
+def test_shared_reads_are_limited_per_address(client, fake_metadata, fake_vectors, fake_llm, monkeypatch):
+    """The one route with no identity to rate limit, so the address is the only handle there is."""
+    monkeypatch.setattr(settings, "shared_requests_per_minute", 2)
+    conversation_id = start_thread(client, fake_vectors)
+    token = client.post(f"/api/conversations/{conversation_id}/share", headers=OWNER_A).json()["share_id"]
+
+    assert [shared_view(client, token).status_code for _ in range(4)] == [200, 200, 429, 429]
 
 
 def test_chat_validates_document_scope(client, fake_metadata):

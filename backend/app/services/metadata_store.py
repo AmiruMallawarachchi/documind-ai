@@ -19,6 +19,7 @@ threadpool, so blocking calls do not stall the event loop.
 from __future__ import annotations
 
 import logging
+import secrets
 from datetime import datetime, timezone
 from typing import Any
 
@@ -40,6 +41,11 @@ _MESSAGES = "messages"
 # Declared here because this module owns the cold-start index pass for the whole database, and a
 # second client for accounts would double the connection count against Atlas M0's small pool.
 _USERS = "users"
+
+# What a shared thread may read back. A projection rather than a filter in Python so that a field added
+# to `messages` later — a citation, a document id, the owner — is absent from the public view by default
+# and has to be added here on purpose to appear.
+_PUBLIC_MESSAGE_FIELDS = {"_id": 0, "role": 1, "content": 1, "created_at": 1}
 
 
 def _database():
@@ -71,6 +77,12 @@ def _ensure_indexes(db) -> None:
         db[_DOCUMENTS].create_index([("owner_id", ASCENDING), ("uploaded_at", -1)])
         db[_DOCUMENTS].create_index("document_id", unique=True)
         db[_CONVERSATIONS].create_index([("owner_id", ASCENDING), ("updated_at", -1)])
+        # Only threads with a live link are indexed, and unique so two can never hold one token.
+        # Revoking `$unset`s the key, so a revoked thread leaves the index instead of sitting in it as
+        # a null that would collide with the next null.
+        db[_CONVERSATIONS].create_index(
+            "share_id", unique=True, partialFilterExpression={"share_id": {"$type": "string"}}
+        )
         # One index serves both "load a thread in order" and "append the next message".
         db[_MESSAGES].create_index([("conversation_id", ASCENDING), ("created_at", ASCENDING)])
         db[_MESSAGES].create_index([("owner_id", ASCENDING), ("conversation_id", ASCENDING)])
@@ -282,6 +294,73 @@ def delete_conversation(owner_id: str, conversation_id: str) -> bool:
         {"conversation_id": conversation_id, "owner_id": owner_id}
     )
     return result.deleted_count > 0
+
+
+def create_or_get_share(owner_id: str, conversation_id: str) -> str | None:
+    """Mint the thread's public token, or return the one it already has.
+
+    Idempotent on purpose: the UI's Share button is pressed twice, and a second mint would strand the
+    first link — still live, still readable, and now with no way left to revoke it. One thread, one link,
+    revoked by `$unset` so the unique partial index never sees two nulls.
+
+    Returns None when there is no such thread for this owner.
+    """
+    existing = _database()[_CONVERSATIONS].find_one(
+        {"conversation_id": conversation_id, "owner_id": owner_id},
+        {"share_id": 1},
+    )
+    if existing is None:
+        return None
+    token = existing.get("share_id")
+    if isinstance(token, str) and token:
+        return token
+
+    token = secrets.token_urlsafe(16)
+    updated = _database()[_CONVERSATIONS].update_one(
+        {"conversation_id": conversation_id, "owner_id": owner_id},
+        {"$set": {"share_id": token}},
+    )
+    return token if updated.matched_count else None
+
+
+def revoke_share(owner_id: str, conversation_id: str) -> bool:
+    """Take the public link down. The thread itself is untouched.
+
+    `$unset`, not `$set: null`: a null still counts as a value against a unique index, so a second
+    revoked thread would collide with the first and the revoke would fail as a duplicate key.
+    """
+    result = _database()[_CONVERSATIONS].update_one(
+        {"conversation_id": conversation_id, "owner_id": owner_id},
+        {"$unset": {"share_id": ""}},
+    )
+    return result.matched_count > 0
+
+
+def get_shared_conversation(share_id: str) -> dict[str, Any] | None:
+    """Look a thread up by its public token. Not owner-scoped — that is what a share link means.
+
+    The token is the whole authority: 128 bits from `secrets`, so it cannot be enumerated the way a
+    sequential ObjectId can, which is the one reason this query is safe without an owner in the filter.
+    The caller must project the result before returning it; a raw row carries `owner_id`.
+    """
+    return _database()[_CONVERSATIONS].find_one({"share_id": share_id})
+
+
+def get_shared_messages(conversation_id: str, limit: int = 200) -> list[dict[str, Any]]:
+    """The messages of a shared thread, in reading order.
+
+    Deliberately not `get_conversation_messages`: that one takes an owner id, and a public route has
+    none to pass. Keeping the two separate means the shared path cannot quietly be given the owner's
+    filter back, and it is the function a reviewer can read to see what the public view is allowed to
+    touch.
+    """
+    cursor = (
+        _database()[_MESSAGES]
+        .find({"conversation_id": conversation_id}, _PUBLIC_MESSAGE_FIELDS)
+        .sort("created_at", 1)
+        .limit(limit)
+    )
+    return list(cursor)
 
 
 def save_message(

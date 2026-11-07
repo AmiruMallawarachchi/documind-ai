@@ -87,10 +87,11 @@ auth dependency (JWT → owner_id)
 
 ### Threads outside that flow
 
-A thread header is `{conversation_id, owner_id, title, created_at, updated_at}` and the title is seeded
-from the first question (`chat.py:101`, capped at 60 characters), because an untitled "New chat" list is
-useless by the fourth thread. Three things a user may want to do to that header happen between questions,
-not during one: rename it, pin it, delete it.
+A thread header is `{conversation_id, owner_id, title, created_at, updated_at, pinned}`, plus `share_id`
+once a link has been minted, and the title is seeded from the first question (`chat.py:105`, capped at 60
+characters), because an untitled "New chat" list is useless by the fourth thread. Four things a user may
+want to do to that header happen between questions, not during one: rename it, pin it, share it, delete
+it.
 
 `updated_at` is the history list's sort key and `save_message` is the only writer allowed to move it. A
 label edit that bumped the timestamp would fling a six-month-old thread to the top of the sidebar for
@@ -99,6 +100,24 @@ someone who only wanted to call it something else, and pinning would do it twice
 `False`, which is why no conversation document had to be rewritten to add it: an absent key is already the
 answer. Deleting removes the messages first and then the header, so a half-finished delete leaves an empty
 thread the user can delete again rather than message rows that nothing can list, count, or clean up.
+
+### A shared thread
+
+`POST /api/conversations/{id}/share` mints the thread's one public token and returns it; `DELETE` on the
+same path takes it down. `create_or_get_share` (`metadata_store.py:299`) reads the row first and returns
+the token it already holds, because the button gets pressed twice and a second mint would strand the
+first link — still live, still readable, with no way left to revoke it. Revoking `$unset`s the key rather
+than setting it to null, which is what lets the unique index on `share_id` be partial: two nulls would
+collide, two absent keys do not.
+
+`GET /api/shared/{token}` is the only route in the app that answers without an identity, and it rests on
+two things no other query uses. The token is `secrets.token_urlsafe(16)` — 128 bits, so unlike the
+sequential ObjectId every other conversation route is keyed on, it cannot be walked, and that is the sole
+reason the lookup may omit `owner_id` from its filter. And `get_shared_messages` reads through a
+projection of three fields, with a `SharedMessage` model that has no citations or agent-trace fields at
+all: a shared thread is prose by the product's own decision, so a filename or a passage cannot reach a
+public page by an oversight three functions away. The address-level limiter in `deps.py` is the third
+guard, because a route with no owner has no per-owner bucket to sit behind.
 
 ### The graph
 
@@ -228,17 +247,24 @@ Mongo and Pinecone filter already keys on. The frontend stores it in `localStora
 **Scoping.** `owner_id` is part of every Mongo filter (`tests/test_metadata_store.py` asserts the query
 shape for each one) and every Pinecone filter. Conversation ids are ObjectIds — sequential and guessable
 — so an unscoped `find_one` would hand over another user's full chat history from a URL parameter alone.
-The same rule covers the write paths added for thread labels: `PATCH` and `DELETE /api/conversations/{id}`
-put `owner_id` in the filter and answer `404` for a foreign id rather than `403`, because a `403` would
-confirm that the guessed id belongs to somebody — which is the enumeration the scoping exists to prevent.
+The same rule covers the write paths added for thread labels and links: `PATCH`, `DELETE` and
+`POST`/`DELETE /api/conversations/{id}/share` put `owner_id` in the filter and answer `404` for a foreign
+id rather than `403`, because a `403` would confirm that the guessed id belongs to somebody — which is
+the enumeration the scoping exists to prevent.
+
+The one exception is `GET /api/shared/{token}`, and it is exception-shaped: the caller has no identity to
+scope by, so the 128-bit token carries the whole authority and the query is `{"share_id": token}` alone.
+What that read is allowed to return is bounded twice over — a three-field Mongo projection and a response
+model with no citations, no agent trace, no owner and no conversation id — so the route cannot widen by
+accident.
 
 **Rate limiting.** A dependency-free sliding window (`core/rate_limit.py`): 10 chat / 6 upload per owner
-per minute, 5 sign-in attempts per client address per minute, and 8 account-creation attempts per address
-per *hour* — the minute-long buckets protect CPU, that one protects a 512 MB Atlas cluster and a personal
-mailbox. Chosen over `slowapi` because the rule is three lines and one deque, and it protects
-*everyone's* shared Groq quota from one runaway client. Rejected requests carry
-`Retry-After`, which the UI shows verbatim. The honest limit: state is per process, so a second Render
-instance doubles the allowance — see §8.
+per minute, 5 sign-in attempts per client address per minute, 30 shared-page reads per address per minute,
+and 8 account-creation attempts per address per *hour* — the minute-long buckets protect CPU, that one
+protects a 512 MB Atlas cluster and a personal mailbox. Chosen over `slowapi` because the rule is three
+lines and one deque, and it protects *everyone's* shared Groq quota from one runaway client. Rejected
+requests carry `Retry-After`, which the UI shows verbatim. The honest limit: state is per process, so a
+second Render instance doubles the allowance — see §8.
 
 **Uploads** are validated by extension and size before parsing, and the limit is enforced before a byte
 is read.
@@ -349,7 +375,7 @@ Next.js 16 App Router, two routes (`/` and `/verify`), no server rendering of us
 
 ## 8. Testing strategy
 
-`cd backend && pytest` — **352 tests, no network, no credentials.**
+`cd backend && pytest` — **366 tests, no network, no credentials.**
 
 | File | Covers | Why it is separate |
 |---|---|---|
@@ -359,7 +385,7 @@ Next.js 16 App Router, two routes (`/` and `/verify`), no server rendering of us
 | `test_vector_store.py`, `test_metadata_store.py` | **query shape**: owner filters, delete-before-write | a fake that records calls catches a missing filter that an in-memory fake never would |
 | `test_llm_retry.py` | which failures retry, and the mid-stream rule | these tests need a model that *fails* |
 | `test_agents.py` | the graph: routing, the revision cycle, zero-hit short-circuit | one integration test per edge |
-| `test_api.py` | HTTP contract, SSE frames, uploads, conversations | 2–3 smoke paths, mocked LLM |
+| `test_api.py` | HTTP contract, SSE frames, uploads, conversations, share links | 2–3 smoke paths, mocked LLM |
 | `test_auth.py` | tokens, owner isolation, rate limits, request ids | production mode flipped per test |
 | `test_password.py` | the policy, `blind_verify`, the rehash predicate | those rules live in the hashing module, so they are tested there and not through a route |
 | `test_user_store.py` | row shape, normalisation, the unique email index | a duplicate signup is only visible as an index violation |
